@@ -197,7 +197,7 @@ def test_cloud_hides_api_docs_and_details(cloud) -> None:
     client, _, _ = cloud
     assert client.get("/docs").status_code == 404 and client.get("/openapi.json").status_code == 404
     health = client.get("/api/health").json()
-    assert set(health) == {"ok", "mode", "claude_configured"}
+    assert set(health) == {"ok", "mode", "claude_configured", "billing"}
 
 
 def test_user_ref_is_stable_and_one_way() -> None:

@@ -59,9 +59,11 @@ async function readDetail(response: Response): Promise<string> {
 
 async function call<T>(
   path: string,
-  init: { method?: string; json?: unknown; form?: FormData; signal?: AbortSignal } = {},
+  init: { method?: string; json?: unknown; form?: FormData; signal?: AbortSignal; grantId?: string | null } = {},
 ): Promise<T> {
   const headers: Record<string, string> = { ...(await authHeaders()) };
+  // Paid mode: the interview's grant, which the backend checks and counts.
+  if (init.grantId) headers["X-Interview-Grant"] = init.grantId;
   if (init.json !== undefined) headers["Content-Type"] = "application/json";
   let response: Response;
   try {
@@ -83,14 +85,27 @@ async function call<T>(
 
 // --- interview --------------------------------------------------------------
 
-export function planInterview(input: { sessionId: string; role: string; questionCount: number }): Promise<InterviewPlan> {
+export function planInterview(input: {
+  sessionId: string;
+  role: string;
+  questionCount: number;
+  grantId?: string | null;
+}): Promise<InterviewPlan> {
   return call("/face-to-face/plan", {
     json: { session_id: input.sessionId, role: input.role, question_count: input.questionCount },
+    grantId: input.grantId,
   });
 }
 
 export function scoreAnswer(
-  input: { sessionId: string; role: string; question: string; answer: string; allowFollowUp: boolean },
+  input: {
+    sessionId: string;
+    role: string;
+    question: string;
+    answer: string;
+    allowFollowUp: boolean;
+    grantId?: string | null;
+  },
   signal?: AbortSignal,
 ): Promise<AnswerScore> {
   return call("/face-to-face/score", {
@@ -102,6 +117,7 @@ export function scoreAnswer(
       allow_follow_up: input.allowFollowUp,
     },
     signal,
+    grantId: input.grantId,
   });
 }
 
@@ -110,10 +126,66 @@ export function modelAnswer(input: {
   role: string;
   question: string;
   answer: string;
+  grantId?: string | null;
 }): Promise<ModelAnswer> {
   return call("/face-to-face/model-answer", {
     json: { session_id: input.sessionId, role: input.role, question: input.question, answer: input.answer },
+    grantId: input.grantId,
   });
+}
+
+// --- billing (cloud, paid mode) --------------------------------------------------------
+
+export interface Pack {
+  id: string;
+  credits: number;
+  price_cents: number;
+  label: string;
+}
+
+export interface Packs {
+  enabled: boolean;
+  currency: string;
+  packs: Pack[];
+}
+
+export interface BillingStatus {
+  enabled: boolean;
+  credits: number;
+  unlimited: boolean;
+}
+
+/** Public: the price list (empty when payments are off). */
+export async function getPacks(): Promise<Packs> {
+  try {
+    const response = await fetch(`${BACKEND}/billing/packs`, { cache: "no-store" });
+    if (response.ok) return (await response.json()) as Packs;
+  } catch {
+    /* fall through */
+  }
+  return { enabled: false, currency: "usd", packs: [] };
+}
+
+export function getBillingStatus(): Promise<BillingStatus> {
+  return call("/billing/status");
+}
+
+/** Returns the Stripe Checkout address to send the person to. */
+export async function startCheckout(pack: string): Promise<string> {
+  return (await call<{ url: string }>("/billing/checkout", { json: { pack } })).url;
+}
+
+/** Spends one credit and returns the interview's grant id ("local" when payments are off). */
+export async function startInterview(): Promise<string> {
+  return (await call<{ grant_id: string }>("/billing/start", { method: "POST" })).grant_id;
+}
+
+export function formatPrice(cents: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat(undefined, { style: "currency", currency: currency.toUpperCase() }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
 }
 
 // --- health, sessions -----------------------------------------------------------
@@ -125,6 +197,7 @@ export interface BackendHealth {
   model?: string;
   vector_index?: string;
   sessions?: number;
+  billing?: boolean;
 }
 
 export interface SessionMeta {
@@ -172,6 +245,21 @@ export async function deleteSession(id: string): Promise<void> {
   } catch (error) {
     if (!(error instanceof BackendError && error.status === 404)) throw error;
   }
+}
+
+// --- job postings -------------------------------------------------------------------
+
+export interface JobPosting {
+  role: string;
+  company: string;
+  location: string;
+  job_description: string;
+  source: "firecrawl" | "direct";
+}
+
+/** Reads a job posting from a link (Firecrawl, else a direct fetch). */
+export function fetchJob(url: string): Promise<JobPosting> {
+  return call("/jobs/fetch", { json: { url } });
 }
 
 // --- notes, history, account ---------------------------------------------------------

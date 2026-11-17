@@ -17,3 +17,4 @@ node_modules/
 next-env.d.ts
 *.tsbuildinfo
 AGENTS.md
+.stripe-webhook-secret

@@ -34,6 +34,7 @@ keys while the app is running; the page picks them up within a few seconds.
 - "Show a stronger answer": a rewrite of your own answer in situation-action-result form, with [brackets] where a fact is missing. Nothing invented.
 - "About you" notes: true facts not on your resume, used as evidence so they stop being flagged.
 - Progress: average score per interview over time, and by question type.
+- Job links: paste a posting URL and the role and description are filled in (Firecrawl, or a built-in reader).
 - "Delete all my data".
 
 ## Cloud version (optional)
@@ -52,6 +53,23 @@ Cloud privacy: sign-in is limited to allowlisted emails (checked by the backend 
 row-level security in Postgres); resumes, notes and interviews are AES-256-GCM encrypted before
 they reach the database, with a key the database never holds; the backend uses each user's own
 token, never a service-role key. Back up `.cloud-encryption-key`: without it the cloud data can't be read.
+
+### Paid mode (sell interviews to other job seekers)
+
+Add `STRIPE_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to `backend/.env`, run `supabase/billing.sql`
+once, then run `./deploy-cloud.sh`. Anyone can then sign up; one credit is one interview.
+
+- Packs: 3 for $9, 10 for $24, 25 for $49 (change with the `IP_PACKS` setting). Admins in
+  `ip_admins` are unlimited.
+- The script registers a Stripe webhook (`checkout.session.completed`) and keeps its signing secret
+  in `.stripe-webhook-secret` (git-ignored). Credits are added only by that signed webhook, once per
+  checkout session, and only if the amount paid matches the pack.
+- Starting an interview spends a credit and returns a 45-minute grant. Planning, scoring, stronger
+  answers and the video call all require that grant, with per-interview caps, so a credit can't be
+  stretched into unlimited Claude or Nuance usage. A failed start retried within 35 minutes reuses it.
+- Supabase's built-in email sender only mails your own team: set up custom SMTP (Resend, Postmark)
+  before opening sign-up.
+- `/terms` and `/privacy` are plain-language starting points. Have them reviewed.
 
 ## Where your data goes
 

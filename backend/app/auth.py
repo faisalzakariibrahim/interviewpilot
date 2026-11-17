@@ -29,6 +29,7 @@ class SupabaseAuth:
     ) -> None:
         self.url = url.rstrip("/") + "/auth/v1/user"
         self.anon_key = anon_key
+        # "*" opens the app to anyone who signs in (paid mode); otherwise only these emails.
         self.allowed = {email.strip().lower() for email in allowed_emails if email.strip()}
         self.transport = transport
         self._cache: Dict[str, Tuple[float, User]] = {}
@@ -54,7 +55,8 @@ class SupabaseAuth:
             raise HTTPException(status_code=401, detail="Your session expired. Sign in again.")
         data = response.json()
         email = str(data.get("email") or "").lower()
-        if not data.get("id") or email not in self.allowed:
+        open_signup = "*" in self.allowed
+        if not data.get("id") or not email or (not open_signup and email not in self.allowed):
             # Same answer for every refusal: don't reveal who is allowed.
             raise HTTPException(status_code=403, detail="This account doesn't have access.")
 

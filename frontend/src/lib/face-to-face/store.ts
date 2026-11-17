@@ -27,6 +27,8 @@ export interface FaceToFaceResult {
   id: string;
   /** The practice session (resume) it ran against. Missing on old results. */
   sessionId?: string;
+  /** Paid mode: the grant this interview ran under; stronger answers are counted against it. */
+  grantId?: string;
   startedAt: string;
   endedAt: string;
   role: string;

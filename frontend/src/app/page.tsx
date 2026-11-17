@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { NotesCard } from "@/components/app/NotesCard";
 import { ProgressPanel } from "@/components/app/ProgressPanel";
-import { SignIn } from "@/components/app/SignIn";
+import { Landing } from "@/components/app/Landing";
+import { Pricing } from "@/components/app/Pricing";
 import { FaceToFaceInterview, Scorecard } from "@/components/face-to-face/FaceToFaceInterview";
 import { CLOUD, signOut, useAuth } from "@/lib/auth";
 import {
@@ -14,11 +15,14 @@ import {
   createSession,
   deleteAllMyData,
   deleteSession,
+  fetchJob,
+  getBillingStatus,
   getHealth,
   getSession,
   listInterviews,
   saveInterview,
   type BackendHealth,
+  type BillingStatus,
 } from "@/lib/face-to-face/api";
 import { useFaceToFaceStore, type FaceToFaceResult } from "@/lib/face-to-face/store";
 
@@ -117,6 +121,9 @@ export default function Home() {
 
   const [role, setRole] = useState("");
   const [jobDescription, setJobDescription] = useState("");
+  const [jobUrl, setJobUrl] = useState("");
+  const [jobBusy, setJobBusy] = useState(false);
+  const [jobNote, setJobNote] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [accountMessage, setAccountMessage] = useState<string | null>(null);
@@ -126,6 +133,39 @@ export default function Home() {
   const claudeReady = backend.state === "ready" && backend.value?.claude_configured === true;
   const nuanceReady = nuance.state === "ready" && nuance.value;
   const history = useHistory(mounted && signedIn && backendUp);
+
+  // Paid mode: the credit balance, refreshed after a purchase or a started interview.
+  const paid = CLOUD && backend.state === "ready" && backend.value?.billing === true;
+  const [balance, setBalance] = useState<BillingStatus | null>(null);
+  const [checkoutNote, setCheckoutNote] = useState<string | null>(null);
+  const [showPacks, setShowPacks] = useState(false);
+  const refreshBalance = useCallback(async () => {
+    try {
+      setBalance(await getBillingStatus());
+    } catch {
+      /* shown as unknown */
+    }
+  }, []);
+  useEffect(() => {
+    if (!mounted || !signedIn || !paid) return;
+    void refreshBalance();
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get("checkout");
+    if (outcome) {
+      setCheckoutNote(
+        outcome === "success"
+          ? "Payment received. Your interviews will appear in a few seconds."
+          : "Checkout was cancelled. Nothing was charged.",
+      );
+      window.history.replaceState(null, "", window.location.pathname);
+      if (outcome === "success") {
+        // The credit arrives through Stripe's webhook, usually within seconds.
+        const timers = [2000, 5000, 10000].map((ms) => setTimeout(() => void refreshBalance(), ms));
+        return () => timers.forEach(clearTimeout);
+      }
+    }
+  }, [mounted, signedIn, paid, refreshBalance]);
+  const outOfCredits = paid && balance !== null && !balance.unlimited && balance.credits < 1;
 
   // The backend may have lost the remembered session: check it still exists there.
   const sessionId = store.session?.id ?? null;
@@ -157,6 +197,23 @@ export default function Home() {
       setFormError(error instanceof Error ? error.message : "Couldn't set up the session.");
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function readJobLink() {
+    if (!jobUrl.trim()) return;
+    setJobBusy(true);
+    setJobNote(null);
+    try {
+      const posting = await fetchJob(jobUrl.trim());
+      setRole(posting.role);
+      setJobDescription(posting.job_description);
+      const where = [posting.company, posting.location].filter(Boolean).join(" · ");
+      setJobNote(`Filled in from the posting${where ? `: ${where}` : ""}. Check it, then continue.`);
+    } catch (error) {
+      setJobNote(error instanceof Error ? error.message : "Couldn't read that link. Paste the description instead.");
+    } finally {
+      setJobBusy(false);
     }
   }
 
@@ -205,7 +262,7 @@ export default function Home() {
         <header className="ip-header">
           <h1>InterviewPilot</h1>
         </header>
-        <SignIn />
+        <Landing />
       </main>
     );
   }
@@ -220,7 +277,9 @@ export default function Home() {
         ? CLOUD
           ? "This server is missing its Nuance key."
           : "Add your Nuance API key first (see above)."
-        : null;
+        : outOfCredits
+          ? "You're out of interviews. Buy more below."
+          : null;
 
   return (
     <main className="ip-shell">
@@ -288,6 +347,31 @@ export default function Home() {
         </div>
       )}
 
+      {paid && (
+        <section className="ip-card" aria-labelledby="balance-title">
+          <div className="ip-row" style={{ justifyContent: "space-between" }}>
+            <h2 id="balance-title" style={{ margin: 0 }}>
+              {balance === null
+                ? "Interviews"
+                : balance.unlimited
+                  ? "Unlimited interviews (owner)"
+                  : `${balance.credits} interview${balance.credits === 1 ? "" : "s"} left`}
+            </h2>
+            {balance && !balance.unlimited && balance.credits > 0 && (
+              <button type="button" onClick={() => setShowPacks((v) => !v)}>
+                {showPacks ? "Hide prices" : "Buy more"}
+              </button>
+            )}
+          </div>
+          {checkoutNote && <p className="ip-muted">{checkoutNote}</p>}
+          {balance && !balance.unlimited && (balance.credits < 1 || showPacks) && (
+            <div style={{ marginTop: 12 }}>
+              <Pricing canBuy compact />
+            </div>
+          )}
+        </section>
+      )}
+
       {store.session ? (
         <>
           <section className="ip-card">
@@ -330,6 +414,8 @@ export default function Home() {
             questionCount={store.questionCount}
             blockedReason={blockedReason}
             onFinished={(result, saved) => (saved ? history.upsert(result) : undefined)}
+            paid={paid}
+            onCreditSpent={() => void refreshBalance()}
           />
         </>
       ) : (
@@ -341,6 +427,30 @@ export default function Home() {
               : "Your resume is read and indexed on this computer, and email addresses, phone numbers and links are removed before it is stored."}{" "}
             To plan questions and score answers, the relevant passages go to Claude.
           </p>
+          <div className="ip-field">
+            <span style={{ fontWeight: 600, fontSize: 14 }}>Job link (optional)</span>
+            <div className="ip-row" style={{ flexWrap: "nowrap" }}>
+              <input
+                className="ip-input"
+                type="url"
+                inputMode="url"
+                value={jobUrl}
+                onChange={(event) => setJobUrl(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void readJobLink();
+                  }
+                }}
+                placeholder="https://careers.example.com/jobs/gsoc-analyst"
+                aria-label="Job posting link"
+              />
+              <button type="button" className="ip-ghost" disabled={jobBusy || !jobUrl.trim() || !backendUp} onClick={() => void readJobLink()}>
+                {jobBusy ? "Reading" : "Use this posting"}
+              </button>
+            </div>
+            {jobNote && <span className="ip-muted">{jobNote}</span>}
+          </div>
           <form onSubmit={(event) => void onSubmit(event)}>
             <label className="ip-field">
               <span>Role you&apos;re interviewing for</span>
@@ -412,6 +522,13 @@ export default function Home() {
         </section>
       )}
       {history.problem && <p className="ip-muted">{history.problem}</p>}
+
+      {CLOUD && (
+        <footer className="ip-muted" style={{ display: "flex", gap: 16, margin: "0 0 20px" }}>
+          <a href="/terms">Terms</a>
+          <a href="/privacy">Privacy</a>
+        </footer>
+      )}
 
       {backendUp && (
         <section className="ip-card">

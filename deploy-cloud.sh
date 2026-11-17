@@ -13,7 +13,13 @@
 #        - NUANCE_API_KEY     from frontend/.env.local
 #        - DATA_ENCRYPTION_KEY, generated here on first run and kept in
 #          .cloud-encryption-key (readable by you only) so a re-run reuses it.
-#   4. Deploys both and prints the address.
+#        - FIRECRAWL_API_KEY  from backend/.env, if present (job-posting links)
+#   4. Paid mode, only if backend/.env has STRIPE_SECRET_KEY: anyone can sign
+#      up and buy interviews. It also needs SUPABASE_SERVICE_ROLE_KEY in
+#      backend/.env, and registers a Stripe webhook whose signing secret is
+#      kept in .stripe-webhook-secret (readable by you only).
+#      Without STRIPE_SECRET_KEY it stays private: only the email you enter.
+#   5. Deploys both and prints the address.
 #
 # Safe to run again: it updates settings and redeploys.
 # Written for the bash 3.2 that ships with macOS.
@@ -29,6 +35,7 @@ WEB_PROJECT="${WEB_PROJECT:-interviewpilot}"
 SUPABASE_URL="https://dopfmtriwbxfoocwlpyc.supabase.co"
 SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcGZtdHJpd2J4Zm9vY3dscHljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ5NDQ1MDMsImV4cCI6MjExMDUyMDUwM30.9RF8pNOnqDTP54YoWvXL_veim5dyoZutQrQvwR3J1xY"
 KEY_FILE="$ROOT/.cloud-encryption-key"
+WEBHOOK_FILE="$ROOT/.stripe-webhook-secret"
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -100,13 +107,47 @@ else
 fi
 chmod 600 "$KEY_FILE"
 
-ALLOWED_EMAILS="${ALLOWED_EMAILS:-}"
-if [ -z "$ALLOWED_EMAILS" ]; then
-  printf '\n  Email allowed to sign in (yours): '
-  read -r ALLOWED_EMAILS
+FIRECRAWL_API_KEY="$(read_env FIRECRAWL_API_KEY backend/.env)"
+STRIPE_SECRET_KEY="$(read_env STRIPE_SECRET_KEY backend/.env)"
+SUPABASE_SERVICE_ROLE_KEY="$(read_env SUPABASE_SERVICE_ROLE_KEY backend/.env)"
+if [ -n "$FIRECRAWL_API_KEY" ]; then info "Firecrawl key found (not shown)"; else info "No FIRECRAWL_API_KEY: job links use the built-in reader"; fi
+
+PAID=""
+SUPPORT_EMAIL="${SUPPORT_EMAIL:-}"
+if [ -n "$STRIPE_SECRET_KEY" ]; then
+  PAID=1
+  case "$STRIPE_SECRET_KEY" in
+    sk_test_* | rk_test_*) info "Paid mode, Stripe TEST keys: no real money moves" ;;
+    sk_live_* | rk_live_*) info "Paid mode, Stripe LIVE keys: real payments" ;;
+    *) fail "STRIPE_SECRET_KEY in backend/.env doesn't look like a Stripe secret key (sk_test_... or sk_live_...)." ;;
+  esac
+  [ -n "$SUPABASE_SERVICE_ROLE_KEY" ] ||
+    fail "Paid mode also needs SUPABASE_SERVICE_ROLE_KEY in backend/.env (Supabase dashboard > Project Settings > API keys)."
+  ALLOWED_EMAILS="*"
+  if [ -z "$SUPPORT_EMAIL" ]; then
+    printf '\n  Support email shown on the Terms and Privacy pages (public; Enter to skip): '
+    read -r SUPPORT_EMAIL
+  fi
+else
+  info "No STRIPE_SECRET_KEY: private mode (only your email can sign in)"
+  ALLOWED_EMAILS="${ALLOWED_EMAILS:-}"
+  if [ -z "$ALLOWED_EMAILS" ]; then
+    printf '\n  Email allowed to sign in (yours): '
+    read -r ALLOWED_EMAILS
+  fi
+  ALLOWED_EMAILS="$(printf '%s' "$ALLOWED_EMAILS" | tr 'A-Z' 'a-z' | tr -d ' ')"
+  case "$ALLOWED_EMAILS" in *@*.*) ;; *) fail "That doesn't look like an email address." ;; esac
 fi
-ALLOWED_EMAILS="$(printf '%s' "$ALLOWED_EMAILS" | tr 'A-Z' 'a-z' | tr -d ' ')"
-case "$ALLOWED_EMAILS" in *@*.*) ;; *) fail "That doesn't look like an email address." ;; esac
+
+# Calls Stripe with the secret key passed through stdin (curl -K -), never on the command line.
+stripe_post() { # path, then form fields as key=value
+  local path="$1"
+  shift
+  local args=()
+  for field in "$@"; do args+=(--data-urlencode "$field"); done
+  printf 'header = "Authorization: Bearer %s"\n' "$STRIPE_SECRET_KEY" |
+    curl -s -K - -X POST "https://api.stripe.com/v1/$path" "${args[@]}"
+}
 
 # --- Vercel sign-in ------------------------------------------------------------------
 
@@ -129,6 +170,14 @@ set_env backend SUPABASE_ANON_KEY "$SUPABASE_ANON_KEY" config
 set_env backend ALLOWED_EMAILS "$ALLOWED_EMAILS" sensitive
 set_env backend ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY" sensitive
 set_env backend DATA_ENCRYPTION_KEY "$DATA_ENCRYPTION_KEY" sensitive
+if [ -n "$FIRECRAWL_API_KEY" ]; then set_env backend FIRECRAWL_API_KEY "$FIRECRAWL_API_KEY" sensitive; fi
+if [ -n "$PAID" ]; then
+  set_env backend INTERVIEWPILOT_BILLING on config
+  set_env backend STRIPE_SECRET_KEY "$STRIPE_SECRET_KEY" sensitive
+  set_env backend SUPABASE_SERVICE_ROLE_KEY "$SUPABASE_SERVICE_ROLE_KEY" sensitive
+else
+  set_env backend INTERVIEWPILOT_BILLING off config
+fi
 
 info "Deploying (a minute or two)..."
 API_OUT="$(cd backend && vc deploy --prod --yes --json 2>"$ROOT/.logs-deploy-api.txt")" ||
@@ -154,6 +203,7 @@ set_env frontend NEXT_PUBLIC_SUPABASE_ANON_KEY "$SUPABASE_ANON_KEY" config
 set_env frontend BACKEND_URL "https://$API_HOST" config
 set_env frontend NEXT_TELEMETRY_DISABLED 1 config
 set_env frontend NUANCE_API_KEY "$NUANCE_API_KEY" sensitive
+if [ -n "$SUPPORT_EMAIL" ]; then set_env frontend NEXT_PUBLIC_SUPPORT_EMAIL "$SUPPORT_EMAIL" config; fi
 
 info "Deploying (two or three minutes)..."
 WEB_OUT="$(cd frontend && vc deploy --prod --yes --json 2>"$ROOT/.logs-deploy-web.txt")" ||
@@ -161,7 +211,37 @@ WEB_OUT="$(cd frontend && vc deploy --prod --yes --json 2>"$ROOT/.logs-deploy-we
 WEB_HOST="$(printf '%s' "$WEB_OUT" | production_host)"
 [ -n "$WEB_HOST" ] || fail "Couldn't find the web app's address in Vercel's answer."
 
-unset ANTHROPIC_API_KEY NUANCE_API_KEY DATA_ENCRYPTION_KEY
+# --- payments ---------------------------------------------------------------------------------
+
+if [ -n "$PAID" ]; then
+  step "Payments: Stripe webhook"
+  if [ -s "$WEBHOOK_FILE" ]; then
+    info "Reusing the webhook secret in .stripe-webhook-secret"
+  else
+    ANSWER="$(stripe_post webhook_endpoints "url=https://$API_HOST/api/stripe/webhook" \
+      "enabled_events[]=checkout.session.completed" "description=InterviewPilot credits")"
+    SECRET="$(printf '%s' "$ANSWER" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("secret",""))' 2>/dev/null)"
+    if [ -z "$SECRET" ]; then
+      REASON="$(printf '%s' "$ANSWER" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("error",{}).get("message","no answer"))' 2>/dev/null)"
+      fail "Stripe didn't create the webhook: $REASON"
+    fi
+    (umask 077 && printf '%s' "$SECRET" >"$WEBHOOK_FILE")
+    unset SECRET ANSWER
+    info "Webhook created; its secret is saved in .stripe-webhook-secret (only you can read it)"
+  fi
+  chmod 600 "$WEBHOOK_FILE"
+  set_env backend STRIPE_WEBHOOK_SECRET "$(cat "$WEBHOOK_FILE")" sensitive
+  set_env backend APP_URL "https://$WEB_HOST" config
+  info "Redeploying the backend with payment settings..."
+  (cd backend && vc deploy --prod --yes --json >/dev/null 2>"$ROOT/.logs-deploy-api.txt") ||
+    { tail -n 20 "$ROOT/.logs-deploy-api.txt"; fail "Backend redeploy failed. The lines above say why."; }
+  case "$(curl -s "https://$API_HOST/api/health" || true)" in
+    *'"billing":true'*) info "Payments are on" ;;
+    *) info "The backend doesn't report payments on yet. Check its environment variables in Vercel." ;;
+  esac
+fi
+
+unset ANTHROPIC_API_KEY NUANCE_API_KEY DATA_ENCRYPTION_KEY STRIPE_SECRET_KEY SUPABASE_SERVICE_ROLE_KEY FIRECRAWL_API_KEY
 
 step "Done: https://$WEB_HOST"
 cat <<EOF
@@ -175,5 +255,14 @@ cat <<EOF
   Then open https://$WEB_HOST, enter your email and click the link it sends.
 
 EOF
+if [ -n "$PAID" ]; then
+  cat <<EOF
+  Before strangers sign up, Supabase must send sign-in emails through your own
+  mail service (its built-in sender only emails your own team):
+    https://supabase.com/dashboard/project/dopfmtriwbxfoocwlpyc/auth/smtp
+  Resend or Postmark both work; send from a domain you own.
+
+EOF
+fi
 [ "$(uname)" = "Darwin" ] && open "https://supabase.com/dashboard/project/dopfmtriwbxfoocwlpyc/auth/url-configuration"
 exit 0

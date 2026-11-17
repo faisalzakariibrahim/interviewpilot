@@ -228,3 +228,13 @@ button:disabled {
   cursor: pointer;
   font-weight: 600;
 }
+
+.ip-legal h2 {
+  font-size: 18px;
+  margin: 24px 0 6px;
+}
+
+.ip-legal p,
+.ip-legal li {
+  color: var(--ip-text);
+}

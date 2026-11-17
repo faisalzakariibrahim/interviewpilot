@@ -66,10 +66,17 @@ async function whoIsAsking(request: Request): Promise<{ ref: string } | Response
   const authorization = request.headers.get("authorization");
   if (!authorization) return refuse(401, "Sign in first.");
   try {
-    const response = await fetch(`${BACKEND_URL}/api/me`, {
-      headers: { Authorization: authorization },
+    // The backend checks the sign-in and, in paid mode, counts this call against the interview's grant.
+    const grant = request.headers.get("x-interview-grant");
+    const response = await fetch(`${BACKEND_URL}/api/billing/authorize-call`, {
+      method: "POST",
+      headers: { Authorization: authorization, ...(grant ? { "X-Interview-Grant": grant } : {}) },
       cache: "no-store",
     });
+    if (response.status === 402) {
+      const detail = ((await response.json().catch(() => ({}))) as { detail?: string }).detail;
+      return refuse(402, detail ?? "Start the interview again.");
+    }
     if (!response.ok) return refuse(response.status === 403 ? 403 : 401, "Sign in again to start an interview.");
     const me = (await response.json()) as { ref?: unknown };
     if (typeof me.ref !== "string" || !END_USER_ID.test(me.ref)) return refuse(502, "Couldn't confirm your sign-in.");

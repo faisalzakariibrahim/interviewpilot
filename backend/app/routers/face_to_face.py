@@ -299,6 +299,7 @@ def build_face_to_face_router(
     client_factory: Optional[ClientFactory] = None,
     notes: Optional[NotesSource] = None,
     current_user: Optional[CurrentUser] = None,
+    guard: Optional[Callable[[str], Callable[..., Any]]] = None,
 ) -> APIRouter:
     """Builds the router.
 
@@ -313,6 +314,10 @@ def build_face_to_face_router(
     get_job = job_context or _no_job
     get_notes = notes or _no_notes
     who = Depends(current_user or _anyone)
+
+    def paid(kind: str) -> Any:
+        """Paid mode: each call must carry a valid interview grant (see app/billing.py)."""
+        return Depends(guard(kind)) if guard else Depends(_anyone)
 
     def get_client() -> Any:
         if state["client"] is None:
@@ -360,7 +365,7 @@ def build_face_to_face_router(
         return _tool_input(message, tool["name"])
 
     @router.post("/plan", response_model=PlanResponse)
-    async def plan(request: PlanRequest, user: Any = who) -> PlanResponse:
+    async def plan(request: PlanRequest, user: Any = who, _paid: Any = paid("plan")) -> PlanResponse:
         chunks = await retrieve(
             user,
             request.session_id,
@@ -410,7 +415,7 @@ def build_face_to_face_router(
         )
 
     @router.post("/score", response_model=ScoreResponse)
-    async def score(request: ScoreRequest, user: Any = who) -> ScoreResponse:
+    async def score(request: ScoreRequest, user: Any = who, _paid: Any = paid("score")) -> ScoreResponse:
         chunks = await retrieve(user, request.session_id, "{}\n{}".format(request.question, request.answer[:1500]), 6)
         candidate_notes = await get_notes(user)
         data = await ask(
@@ -449,7 +454,9 @@ def build_face_to_face_router(
         )
 
     @router.post("/model-answer", response_model=ModelAnswerResponse)
-    async def model_answer(request: ModelAnswerRequest, user: Any = who) -> ModelAnswerResponse:
+    async def model_answer(
+        request: ModelAnswerRequest, user: Any = who, _paid: Any = paid("answer")
+    ) -> ModelAnswerResponse:
         chunks: List[str] = []
         if request.session_id:
             chunks = await retrieve(user, request.session_id, "{}\n{}".format(request.question, request.answer[:1500]), 6)

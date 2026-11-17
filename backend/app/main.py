@@ -16,13 +16,15 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from dotenv import dotenv_values
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .auth import LOCAL_USER, LocalAuth, SupabaseAuth
+from .billing import Billing, BillingError, build_billing_router, grant_guard
 from .crypto import CryptoError, Sealer
 from .routers.account import build_account_router
+from .routers.jobs import build_jobs_router
 from .routers.face_to_face import DEFAULT_MODEL, build_face_to_face_router, default_client_factory
 from .routers.sessions import build_sessions_router
 from .stores.base import Store, StoreError, User
@@ -54,7 +56,9 @@ def _misconfigured_app(problem: str) -> FastAPI:
     return broken
 
 
-def create_app(mode: Optional[str] = None, store: Optional[Store] = None, auth: Any = None) -> FastAPI:
+def create_app(
+    mode: Optional[str] = None, store: Optional[Store] = None, auth: Any = None, billing: Optional[Billing] = None
+) -> FastAPI:
     refresh_env()
     mode = (mode or os.getenv("INTERVIEWPILOT_MODE") or "local").strip().lower()
 
@@ -82,6 +86,20 @@ def create_app(mode: Optional[str] = None, store: Optional[Store] = None, auth: 
             data_dir = Path(os.getenv("INTERVIEWPILOT_DATA_DIR") or (BACKEND_DIR / "data"))
             store = LocalStore(data_dir)
         auth = auth or LocalAuth()
+
+    if billing is None:
+        # Charging is on only in cloud mode with INTERVIEWPILOT_BILLING=on.
+        enabled = mode == "cloud" and (os.getenv("INTERVIEWPILOT_BILLING") or "").lower() in ("on", "1", "true")
+        billing = Billing(
+            enabled=enabled,
+            supabase_url=os.getenv("SUPABASE_URL", ""),
+            anon_key=os.getenv("SUPABASE_ANON_KEY", ""),
+            service_key=os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
+            stripe_secret=os.getenv("STRIPE_SECRET_KEY", ""),
+            webhook_secret=os.getenv("STRIPE_WEBHOOK_SECRET", ""),
+            app_url=os.getenv("APP_URL", ""),
+            currency=os.getenv("IP_CURRENCY", "usd"),
+        )
 
     application = FastAPI(title="InterviewPilot", version="0.2.0", docs_url=None if mode == "cloud" else "/docs",
                           redoc_url=None, openapi_url=None if mode == "cloud" else "/openapi.json")
@@ -114,11 +132,24 @@ def create_app(mode: Optional[str] = None, store: Optional[Store] = None, auth: 
         refresh_env()
         return default_client_factory()
 
+    async def count_job_fetch(user: User) -> None:
+        try:
+            await billing.count_job_fetch(user)
+        except BillingError as error:
+            raise HTTPException(status_code=error.status, detail=str(error)) from error
+
     application.include_router(build_sessions_router(store, auth))
+    application.include_router(build_jobs_router(auth, client_factory, before_fetch=count_job_fetch))
+    application.include_router(build_billing_router(billing, auth))
     application.include_router(build_account_router(store, auth, mode))
     application.include_router(
         build_face_to_face_router(
-            retrieve, job_context=job_context, notes=notes, client_factory=client_factory, current_user=auth
+            retrieve,
+            job_context=job_context,
+            notes=notes,
+            client_factory=client_factory,
+            current_user=auth,
+            guard=grant_guard(billing, auth) if billing.enabled else None,
         )
     )
 
@@ -128,7 +159,8 @@ def create_app(mode: Optional[str] = None, store: Optional[Store] = None, auth: 
         body: Dict[str, Any] = {
             "ok": True,
             "mode": mode,
-            "claude_configured": bool(os.getenv("ANTHROPIC_API_KEY")),
+            "claude_configured": bool((os.getenv("ANTHROPIC_API_KEY") or "").strip()),
+            "billing": billing.enabled,
         }
         if mode == "local":
             body.update(
@@ -140,6 +172,7 @@ def create_app(mode: Optional[str] = None, store: Optional[Store] = None, auth: 
 
     application.state.store = store
     application.state.mode = mode
+    application.state.billing = billing
     return application
 
 

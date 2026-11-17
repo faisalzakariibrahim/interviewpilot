@@ -26,6 +26,9 @@ interface Props {
   blockedReason?: string | null;
   /** Called with each finished interview, after it is saved. */
   onFinished?: (result: FaceToFaceResult, saved: boolean) => void;
+  /** Paid mode: starting spends one interview credit. */
+  paid?: boolean;
+  onCreditSpent?: () => void;
 }
 
 const css = {
@@ -210,6 +213,7 @@ function TurnCard({
         role: result.role,
         question: turn.question,
         answer: turn.answer,
+        grantId: result.grantId ?? null,
       });
       const updated: FaceToFaceResult = {
         ...result,
@@ -323,10 +327,18 @@ export function Scorecard({
   );
 }
 
-export function FaceToFaceInterview({ sessionId, role, questionCount = 5, blockedReason = null, onFinished }: Props) {
+export function FaceToFaceInterview({
+  sessionId,
+  role,
+  questionCount = 5,
+  blockedReason = null,
+  onFinished,
+  paid = false,
+  onCreditSpent,
+}: Props) {
   const store = useFaceToFaceStore();
   const consented = hasConsented(store);
-  const interview = useFaceToFaceInterview({ sessionId, role, questionCount, onFinished });
+  const interview = useFaceToFaceInterview({ sessionId, role, questionCount, onFinished, paid, onCreditSpent });
   const { status, snapshot, result, failure } = interview;
   const inCall = status === "starting" || status === "live";
 
@@ -436,7 +448,15 @@ export function FaceToFaceInterview({ sessionId, role, questionCount = 5, blocke
             disabled={Boolean(blockedReason)}
             onClick={() => void interview.start()}
           >
-            {status === "failed" ? "Try again" : status === "ended" ? "Start another interview" : "Start interview"}
+            {status === "failed"
+              ? "Try again"
+              : status === "ended"
+                ? paid
+                  ? "Start another interview (1 credit)"
+                  : "Start another interview"
+                : paid
+                  ? "Start interview (1 credit)"
+                  : "Start interview"}
           </button>
         )}
         {!inCall && (

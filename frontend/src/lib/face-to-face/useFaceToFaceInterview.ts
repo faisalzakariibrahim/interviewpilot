@@ -15,7 +15,7 @@ import {
   createNuanceConversation,
   type Conversation,
 } from "@nuancelabs/js-sdk";
-import { planInterview, saveInterview, scoreAnswer } from "./api";
+import { planInterview, saveInterview, scoreAnswer, startInterview } from "./api";
 import { authHeaders } from "../auth";
 import { InterviewDirector, type DirectorSnapshot } from "./director";
 import { averageScore, hasConsented, useFaceToFaceStore, type FaceToFaceResult } from "./store";
@@ -51,7 +51,14 @@ interface Options {
   maxSessionSeconds?: number;
   /** Called with each finished interview once it is saved (or failed to save). */
   onFinished?: (result: FaceToFaceResult, saved: boolean) => void;
+  /** Paid mode: each interview spends a credit and runs under a grant. */
+  paid?: boolean;
+  /** Called after a credit is spent, so the page can refresh the balance. */
+  onCreditSpent?: () => void;
 }
+
+/** A grant can be reused for a retry if no answer was scored under it and it is still fresh. */
+const GRANT_REUSE_MS = 35 * 60 * 1000;
 
 /** Turns a failed start into words for the person. Acts on fields, never on messages. */
 function describeFailure(error: unknown): string {
@@ -87,6 +94,10 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
   const { sessionId, role, questionCount = 5, maxSessionSeconds = 20 * 60 } = options;
   const onFinishedRef = useRef(options.onFinished);
   onFinishedRef.current = options.onFinished;
+  const onCreditSpentRef = useRef(options.onCreditSpent);
+  onCreditSpentRef.current = options.onCreditSpent;
+  const paid = Boolean(options.paid);
+  const lastGrant = useRef<{ id: string; at: number; answered: boolean } | null>(null);
 
   const [status, setStatus] = useState<InterviewStatus>("idle");
   const [failure, setFailure] = useState<string | null>(null);
@@ -145,11 +156,34 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     const startedAt = new Date().toISOString();
     const { localUserId, personaId, style, cameraEnabled } = store;
 
+    // Paid mode: one credit per interview. A start that failed before any answer
+    // (no capacity, a dropped call) reuses its grant instead of spending again.
+    const reusable =
+      lastGrant.current && !lastGrant.current.answered && Date.now() - lastGrant.current.at < GRANT_REUSE_MS
+        ? lastGrant.current.id
+        : null;
+    const granting: Promise<string | null> = !paid
+      ? Promise.resolve(null)
+      : reusable
+        ? Promise.resolve(reusable)
+        : startInterview().then((id) => {
+            lastGrant.current = { id, at: Date.now(), answered: false };
+            onCreditSpentRef.current?.();
+            return id;
+          });
+    let resolvedGrant: string | null = null;
+    granting.then((id) => (resolvedGrant = id)).catch(() => undefined);
+
     const conversation = createNuanceConversation({
       token: async () => {
+        const grantId = await granting;
         const response = await fetch("/api/nuance-token", {
           method: "POST",
-          headers: { "Content-Type": "application/json", ...(await authHeaders()) },
+          headers: {
+            "Content-Type": "application/json",
+            ...(await authHeaders()),
+            ...(grantId ? { "X-Interview-Grant": grantId } : {}),
+          },
           body: JSON.stringify({
             localUserId,
             personaId,
@@ -184,6 +218,7 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
       const finished: FaceToFaceResult = {
         id: (conversation.id ?? `local_${Date.now()}`).replace(/[^A-Za-z0-9_.:-]/g, "_").slice(0, 128),
         sessionId,
+        ...(resolvedGrant && resolvedGrant !== "local" ? { grantId: resolvedGrant } : {}),
         startedAt,
         endedAt: new Date().toISOString(),
         role,
@@ -240,7 +275,7 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     // Connect right away, inside the click, so the browser allows audio. The
     // interviewer takes up to half a minute to get ready; plan meanwhile.
     const connecting = conversation.connect();
-    const planning = planInterview({ sessionId, role, questionCount });
+    const planning = granting.then((grantId) => planInterview({ sessionId, role, questionCount, grantId }));
     // Each is awaited below; this keeps a rejection from going unhandled meanwhile.
     connecting.catch(() => undefined);
     planning.catch(() => undefined);
@@ -253,7 +288,11 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
         plan,
         sessionId,
         role,
-        score: scoreAnswer,
+        score: async (input, signal) => {
+          const grantId = await granting;
+          if (grantId && lastGrant.current?.id === grantId) lastGrant.current.answered = true;
+          return scoreAnswer({ ...input, grantId }, signal);
+        },
         onUpdate: (next) => {
           if (run === runId.current) setSnapshot(next);
         },
@@ -273,7 +312,7 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
       setFailure(describeFailure(error));
       setStatus("failed");
     }
-  }, [attachTracks, maxSessionSeconds, questionCount, release, role, sessionId]);
+  }, [attachTracks, maxSessionSeconds, paid, questionCount, release, role, sessionId]);
 
   const end = useCallback(async () => {
     // disconnect() sends session.close and leaves the room. finalize() runs once
