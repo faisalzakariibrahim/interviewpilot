@@ -1,0 +1,107 @@
+// Face-to-face settings, persisted in this browser (localStorage). Interview
+// history lives in the backend (backend/data locally, encrypted in the cloud);
+// `results` here only holds history from older versions until it is moved.
+
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { AnswerScore, ModelAnswer, SessionMeta } from "./api";
+import type { InterviewStyle, PersonaId } from "./personas";
+
+/** Bump when the disclosure text changes, so people are asked again. */
+export const DISCLOSURE_VERSION = 1;
+
+export interface ScoredTurn {
+  questionId: string;
+  question: string;
+  /** behavioral, technical, situational, motivation or experience. Missing on old results. */
+  category?: string;
+  isFollowUp: boolean;
+  answer: string;
+  /** Null when scoring failed; the answer is still kept. */
+  score: AnswerScore | null;
+  /** A stronger version of the answer, made on request after the interview. */
+  modelAnswer?: ModelAnswer;
+}
+
+export interface FaceToFaceResult {
+  id: string;
+  /** The practice session (resume) it ran against. Missing on old results. */
+  sessionId?: string;
+  startedAt: string;
+  endedAt: string;
+  role: string;
+  style: InterviewStyle;
+  personaId: PersonaId;
+  endReason: string;
+  turns: ScoredTurn[];
+  /** Mean of the scored answers, 0 to 10, or null when none were scored. */
+  average: number | null;
+}
+
+interface FaceToFaceState {
+  /** A random id for Nuance's per-person policy pauses. Never a name or email. */
+  localUserId: string;
+  consentVersion: number | null;
+  consentAt: string | null;
+  cameraEnabled: boolean;
+  style: InterviewStyle;
+  personaId: PersonaId;
+  /** History from versions before it moved to the backend. Emptied once moved. */
+  results: FaceToFaceResult[];
+  /** The practice session in use: which resume and role. The resume itself lives in the backend. */
+  session: SessionMeta | null;
+  questionCount: number;
+  setSession: (session: SessionMeta | null) => void;
+  setQuestionCount: (count: number) => void;
+  acceptDisclosure: () => void;
+  withdrawConsent: () => void;
+  setCameraEnabled: (on: boolean) => void;
+  setStyle: (style: InterviewStyle) => void;
+  setPersonaId: (id: PersonaId) => void;
+  clearLegacyResults: () => void;
+}
+
+function newLocalUserId(): string {
+  const random =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `ip_${random}`;
+}
+
+export const useFaceToFaceStore = create<FaceToFaceState>()(
+  persist(
+    (set) => ({
+      localUserId: newLocalUserId(),
+      consentVersion: null,
+      consentAt: null,
+      // Off by default: the interviewer works without seeing you.
+      cameraEnabled: false,
+      style: "neutral",
+      personaId: "sam",
+      results: [],
+      session: null,
+      questionCount: 5,
+      setSession: (session) => set({ session }),
+      setQuestionCount: (questionCount) => set({ questionCount }),
+      acceptDisclosure: () =>
+        set({ consentVersion: DISCLOSURE_VERSION, consentAt: new Date().toISOString() }),
+      withdrawConsent: () => set({ consentVersion: null, consentAt: null, cameraEnabled: false }),
+      setCameraEnabled: (cameraEnabled) => set({ cameraEnabled }),
+      setStyle: (style) => set({ style }),
+      setPersonaId: (personaId) => set({ personaId }),
+      clearLegacyResults: () => set({ results: [] }),
+    }),
+    { name: "interviewpilot-face-to-face", version: 1 },
+  ),
+);
+
+export function hasConsented(state: Pick<FaceToFaceState, "consentVersion">): boolean {
+  return state.consentVersion === DISCLOSURE_VERSION;
+}
+
+export function averageScore(turns: ScoredTurn[]): number | null {
+  const scores = turns.flatMap((turn) => (turn.score ? [turn.score.score] : []));
+  if (!scores.length) return null;
+  return Math.round((scores.reduce((sum, value) => sum + value, 0) / scores.length) * 10) / 10;
+}

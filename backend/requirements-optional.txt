@@ -1,0 +1,2 @@
+# Installed when a wheel exists for your Python. Without it, search runs in NumPy.
+faiss-cpu>=1.8

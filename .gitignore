@@ -1,0 +1,19 @@
+# Secrets and local data never go into git.
+.env
+.env.local
+backend/data/
+backend/.venv/
+.logs/
+__pycache__/
+.pytest_cache/
+.DS_Store
+
+# Vercel links and the cloud encryption key never go into git or zips.
+.vercel/
+.cloud-encryption-key
+.logs-deploy-*.txt
+node_modules/
+.next/
+next-env.d.ts
+*.tsbuildinfo
+AGENTS.md
