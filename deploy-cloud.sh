@@ -49,7 +49,8 @@ vc() { npx --yes vercel@65 --scope "$SCOPE" "$@"; }
 
 # Reads KEY=value from a dotenv file without printing it.
 read_env() {
-  sed -n "s/^[[:space:]]*$1=//p" "$2" 2>/dev/null | tail -n 1 | sed 's/^["'\'']//; s/["'\'']$//; s/[[:space:]]*$//'
+  sed -n "s/^[[:space:]]*$1=//p" "$2" 2>/dev/null | tail -n 1 |
+    sed 's/^[[:space:]]*//; s/[[:space:]]*$//; s/^["'\'']//; s/["'\'']$//; s/^[[:space:]]*//; s/[[:space:]]*$//' | tr -d '\r'
 }
 
 # Sets one variable on a project. Values go through stdin, never the command line.

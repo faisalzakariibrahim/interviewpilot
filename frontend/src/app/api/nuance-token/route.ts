@@ -51,7 +51,7 @@ function isSameOrigin(request: Request): boolean {
 /** Whether face-to-face mode is set up. Says nothing about the key itself. */
 export async function GET(): Promise<Response> {
   return Response.json(
-    { configured: Boolean(process.env.NUANCE_API_KEY) },
+    { configured: Boolean((process.env.NUANCE_API_KEY ?? "").trim()) },
     { headers: { "Cache-Control": "no-store" } },
   );
 }
@@ -80,7 +80,9 @@ async function whoIsAsking(request: Request): Promise<{ ref: string } | Response
 }
 
 export async function POST(request: Request): Promise<Response> {
-  if (!process.env.NUANCE_API_KEY) {
+  // A stray space or line break pasted with the key would make Nuance refuse it.
+  const nuanceKey = (process.env.NUANCE_API_KEY ?? "").trim();
+  if (!nuanceKey) {
     return refuse(
       501,
       CLOUD
@@ -124,7 +126,7 @@ export async function POST(request: Request): Promise<Response> {
     response = await fetch(`${NUANCE_API}/session-tokens`, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${process.env.NUANCE_API_KEY}`,
+        Authorization: `Bearer ${nuanceKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -157,7 +159,12 @@ export async function POST(request: Request): Promise<Response> {
       `[nuance-token] POST /session-tokens answered ${response.status}: ${await response.text()}`,
     );
     if (response.status === 401) {
-      return refuse(502, "Nuance didn't accept the API key. Check NUANCE_API_KEY in frontend/.env.local.");
+      return refuse(
+        502,
+        CLOUD
+          ? "Nuance didn't accept the server's API key. Re-run deploy-cloud.sh after checking frontend/.env.local."
+          : "Nuance didn't accept the API key. Check NUANCE_API_KEY in frontend/.env.local.",
+      );
     }
     return refuse(502, "Couldn't start a face-to-face session right now. Details are in .logs/frontend.log.");
   }

@@ -262,14 +262,16 @@ def _tool_input(message: Any, tool_name: str) -> Dict[str, Any]:
 
 def default_client_factory() -> Any:
     """Makes an AsyncAnthropic from ANTHROPIC_API_KEY, or answers 503 with what to do."""
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    if not key:
         raise HTTPException(
             status_code=503,
             detail="ANTHROPIC_API_KEY is missing. Add it to backend/.env and try again.",
         )
     from anthropic import AsyncAnthropic
 
-    return AsyncAnthropic()
+    # A stray space or line break pasted with the key would make every call fail.
+    return AsyncAnthropic(api_key=key)
 
 
 def _notes_block(notes: str) -> str:
