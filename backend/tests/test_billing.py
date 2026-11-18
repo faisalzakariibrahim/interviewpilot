@@ -157,7 +157,7 @@ def test_open_signup_but_no_credits_means_no_interview(paid) -> None:
     client, _ = paid
     assert client.get("/api/billing/status", headers=h("tok-stranger")).json() == {"enabled": True, "credits": 0, "unlimited": False, "plan": None}
     response = client.post("/api/billing/start", headers=h("tok-stranger"))
-    assert response.status_code == 402 and "out of interviews" in response.json()["detail"]
+    assert response.status_code == 402 and "free interview" in response.json()["detail"]
     plan = client.post("/api/face-to-face/plan", json={"session_id": "x", "role": "GSOC"}, headers=h("tok-stranger"))
     assert plan.status_code == 402
 
@@ -244,7 +244,7 @@ def test_local_mode_never_charges(tmp_path, monkeypatch) -> None:
     client = TestClient(create_app(mode="local"))
     assert client.get("/api/billing/status").json()["enabled"] is False
     assert client.post("/api/billing/start").json() == {"grant_id": "local"}
-    assert client.get("/api/billing/packs").json() == {"enabled": False, "currency": "usd", "packs": []}
+    assert client.get("/api/billing/packs").json()["packs"] == []
 
 
 def test_monthly_plan(paid) -> None:
@@ -286,3 +286,9 @@ def test_a_subscription_at_the_wrong_price_is_refused(paid) -> None:
     assert client.post("/api/stripe/webhook", **signed(sub_event(OTHER, amount=1))).status_code == 400
     assert OTHER not in fake.plans
     assert client.post("/api/billing/portal", headers=h("tok-other")).status_code == 404
+
+
+def test_default_offer_is_the_monthly_plan_only(monkeypatch) -> None:
+    from app.billing import load_packs
+    monkeypatch.delenv("IP_PACKS", raising=False)
+    assert [(p.kind, p.price_cents) for p in load_packs()] == [("monthly", 1000)]

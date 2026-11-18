@@ -39,7 +39,7 @@ export function Pricing({
   function describe(pack: Pack) {
     const price = formatPrice(pack.price_cents, packs!.currency);
     return pack.kind === "monthly"
-      ? { title: pack.label || "Monthly", price, unit: "per month", note: `Up to ${packs!.monthly_limit ?? 60} interviews a month. Cancel any time.`, action: "Subscribe" }
+      ? { title: pack.label || "Monthly", price, unit: "per month", note: `Up to ${packs!.monthly_limit ?? 60} interviews a month. Cancel any time.`, action: "Subscribe for " + price + "/month" }
       : {
           title: pack.label || "Pay as you go",
           price,
@@ -52,6 +52,15 @@ export function Pricing({
   return (
     <div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+        {!canBuy && (
+          <div style={{ background: "var(--ip-surface-2)", border: "1px solid var(--ip-border)", borderRadius: 12, padding: compact ? 14 : 18 }}>
+            <p style={{ margin: 0, fontWeight: 600 }}>First interview</p>
+            <p style={{ margin: "6px 0 0" }}>
+              <span style={{ fontSize: compact ? 22 : 28, fontWeight: 700 }}>Free</span>
+            </p>
+            <p className="ip-muted" style={{ margin: "6px 0 12px" }}>Every new account gets one full interview with scorecard. No card needed.</p>
+          </div>
+        )}
         {shown.map((pack) => {
           const card = describe(pack);
           return (

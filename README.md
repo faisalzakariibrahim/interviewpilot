@@ -57,12 +57,13 @@ token, never a service-role key. Back up `.cloud-encryption-key`: without it the
 ### Paid mode (sell interviews to other job seekers)
 
 Add `STRIPE_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to `backend/.env`, run `supabase/billing.sql`
-once, then run `./deploy-cloud.sh`. Anyone can then sign up; one credit is one interview.
+once, then run `./deploy-cloud.sh`. Anyone can then sign up.
 
-- Prices: $1 per interview (buy 1 to 50 at checkout; they never expire), or $10/month for up to
-  60 interviews a month. Change prices with the `IP_PACKS` setting; change the monthly cap in the
-  database (`update ip_private.settings set value = '80' where key = 'monthly_limit'`) and set
-  `IP_MONTHLY_LIMIT` on the backend to match. Admins in `ip_admins` are unlimited.
+- Pricing: every new account gets 1 free interview, then $10/month for up to 60 interviews a month.
+  Change the free count or the cap in the database
+  (`update ip_private.settings set value = '2' where key = 'free_credits'`, or `'monthly_limit'`);
+  if you change the cap, set `IP_MONTHLY_LIMIT` on the backend to match the price card. Single-interview
+  sales can be switched back on through `IP_PACKS`. Admins in `ip_admins` are unlimited.
 - Customers cancel or change their card through Stripe's customer portal ("Manage plan"). Turn the
   portal on once in Stripe: Settings → Billing → Customer portal → Save.
 - The script registers a Stripe webhook (checkout and subscription events) and keeps its signing secret

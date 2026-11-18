@@ -29,7 +29,7 @@ export default function Terms() {
 
       <h2>Interviews and payment</h2>
       <ul>
-        <li>Pay as you go: $1 per interview, bought in advance. Unused interviews don&apos;t expire and can be refunded within 14 days of purchase on request.</li>
+        <li>Every new account gets one free interview. One account per person; extra accounts made to get more free interviews may be closed.</li>
         <li>
           Monthly plan: $10 a month, renewing automatically until you cancel. It includes up to 60 interviews per billing
           month (fair use); unused ones don&apos;t carry over. Cancel any time from &quot;Manage plan&quot;: the plan stays

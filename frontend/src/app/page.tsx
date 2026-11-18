@@ -291,8 +291,8 @@ export default function Home() {
           : "Add your Nuance API key first (see above)."
         : outOfCredits
           ? balance?.plan?.active
-            ? "You've used this month's plan interviews. Buy single interviews below to keep going."
-            : "You're out of interviews. Buy one below or start the monthly plan."
+            ? "You've used this month's plan interviews. They reset when your plan renews."
+            : "You've used your free interview. Subscribe below to keep practising."
           : null;
 
   return (
@@ -371,24 +371,26 @@ export default function Home() {
                   ? "Unlimited interviews (owner)"
                   : balance.plan?.active
                     ? `Monthly plan: ${Math.max(balance.plan.limit - balance.plan.used, 0)} of ${balance.plan.limit} left this month`
-                    : `${balance.credits} interview${balance.credits === 1 ? "" : "s"} left`}
+                    : balance.credits > 0
+                      ? `${balance.credits} free interview${balance.credits === 1 ? "" : "s"} left`
+                      : "No interviews left"}
             </h2>
             <div className="ip-row" style={{ gap: 8 }}>
               {balance?.plan && (
-                <button type="button" onClick={() => void managePlan()} disabled={portalBusy}>
+                <button type="button" className="ip-ghost" onClick={() => void managePlan()} disabled={portalBusy}>
                   {portalBusy ? "Opening" : "Manage plan"}
                 </button>
               )}
-              {balance && !balance.unlimited && !outOfCredits && (
-                <button type="button" onClick={() => setShowPacks((v) => !v)}>
-                  {showPacks ? "Hide prices" : "Buy more"}
+              {balance && !balance.unlimited && !balance.plan?.active && !outOfCredits && (
+                <button type="button" className="ip-primary" onClick={() => setShowPacks((v) => !v)}>
+                  {showPacks ? "Hide" : "Subscribe"}
                 </button>
               )}
             </div>
           </div>
           {balance?.plan?.active && (
             <p className="ip-muted">
-              {balance.credits > 0 ? `Plus ${balance.credits} single interview${balance.credits === 1 ? "" : "s"}. ` : ""}
+              {balance.credits > 0 ? `Plus ${balance.credits} free interview${balance.credits === 1 ? "" : "s"}. ` : ""}
               {balance.plan.cancel_at_period_end ? "Ends" : "Renews"} {new Date(balance.plan.renews_at).toLocaleDateString()}.
             </p>
           )}
@@ -396,7 +398,7 @@ export default function Home() {
             <p className="ip-muted">Your monthly plan isn&apos;t active ({balance.plan.status.replace(/_/g, " ")}).</p>
           )}
           {checkoutNote && <p className="ip-muted">{checkoutNote}</p>}
-          {balance && !balance.unlimited && (outOfCredits || showPacks) && (
+          {balance && !balance.unlimited && !balance.plan?.active && (outOfCredits || showPacks) && (
             <div style={{ marginTop: 12 }}>
               <Pricing canBuy compact hideMonthly={Boolean(balance.plan?.active)} />
             </div>

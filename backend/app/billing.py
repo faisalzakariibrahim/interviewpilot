@@ -34,11 +34,12 @@ def stripe_api() -> str:
 GRANT_HEADER = "x-interview-grant"
 SIGNATURE_TOLERANCE_SECONDS = 300
 
-# "credits": one-time purchase, the buyer picks how many at checkout (credits = quantity).
-# "monthly": a subscription; interviews are free while it's active, up to the monthly_limit
-# set in the database (ip_private.settings, default 60).
+# Every account starts with one free interview (set in the database: ip_private.settings 'free_credits').
+# "monthly": a subscription; interviews are included while it's active, up to the monthly_limit
+#   set in the database (ip_private.settings, default 60).
+# "credits": optional one-time purchase (credits = quantity picked at checkout). Off by default;
+#   add one through IP_PACKS to sell single interviews again.
 DEFAULT_PACKS = [
-    {"id": "single", "kind": "credits", "price_cents": 100, "label": "Pay as you go", "max_quantity": 50},
     {"id": "monthly", "kind": "monthly", "price_cents": 1000, "label": "Monthly"},
 ]
 SUBSCRIPTION_EVENTS = ("customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted")
@@ -133,9 +134,9 @@ class Billing:
         if response.status_code == 200:
             return response.json()
         if "plan_limit" in response.text:
-            raise BillingError("You've used this month's interviews on your plan. Buy single interviews to keep going.", 402)
+            raise BillingError("You've used this month's interviews on your plan. They reset when it renews.", 402)
         if "no_credits" in response.text:
-            raise BillingError("You're out of interviews. Buy more or start the monthly plan.", 402)
+            raise BillingError("You've used your free interview. Subscribe to keep practising.", 402)
         if response.status_code in (401, 403):
             raise BillingError("Your session expired. Sign in again.", 401)
         raise BillingError("The account service refused the request ({}).".format(response.status_code), 502)
