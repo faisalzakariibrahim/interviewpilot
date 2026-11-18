@@ -64,8 +64,8 @@ and `supabase/hardening.sql` once, then run `./deploy-cloud.sh`. Anyone can then
   (`update ip_private.settings set value = '2' where key = 'free_credits'`, or `'monthly_limit'`);
   if you change the cap, set `IP_MONTHLY_LIMIT` on the backend to match the price card. Single-interview
   sales can be switched back on through `IP_PACKS`. Admins in `ip_admins` are unlimited.
-- Customers cancel or change their card through Stripe's customer portal ("Manage plan"). Turn the
-  portal on once in Stripe: Settings → Billing → Customer portal → Save.
+- Customers cancel or change their card through Stripe's customer portal ("Manage plan"). The deploy
+  script sets the portal up through Stripe's API (its id is kept in `.stripe-portal-config`).
 - The script registers a Stripe webhook (checkout and subscription events) and keeps its signing secret
   in `.stripe-webhook-secret` (git-ignored). Credits are added only by that signed webhook, once per
   checkout session, and only if the amount paid matches the price; the plan is switched on and off only by Stripe's subscription events.

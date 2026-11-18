@@ -252,9 +252,12 @@ class Billing:
         plan = (await self._account(user)).get("plan") or {}
         if not plan.get("customer_id"):
             raise BillingError("You don't have a monthly plan.", 404)
-        answer = await self._stripe(
-            "/billing_portal/sessions", {"customer": str(plan["customer_id"]), "return_url": self.app_url + "/"}
-        )
+        form = {"customer": str(plan["customer_id"]), "return_url": self.app_url + "/"}
+        # Set by deploy-cloud.sh, which creates the portal settings through Stripe's API.
+        config = (os.getenv("STRIPE_PORTAL_CONFIG") or "").strip()
+        if config:
+            form["configuration"] = config
+        answer = await self._stripe("/billing_portal/sessions", form)
         return self._stripe_url(str(answer.get("url") or ""))
 
     async def _service_rpc(self, function: str, args: Dict[str, Any]) -> Any:

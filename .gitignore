@@ -18,3 +18,4 @@ next-env.d.ts
 *.tsbuildinfo
 AGENTS.md
 .stripe-webhook-secret
+.stripe-portal-config

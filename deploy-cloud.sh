@@ -17,7 +17,8 @@
 #   4. Paid mode, only if backend/.env has STRIPE_SECRET_KEY: anyone can sign
 #      up and buy interviews. It also needs SUPABASE_SERVICE_ROLE_KEY in
 #      backend/.env, and registers a Stripe webhook whose signing secret is
-#      kept in .stripe-webhook-secret (readable by you only).
+#      kept in .stripe-webhook-secret (readable by you only), and sets up Stripe's
+#      customer portal (cancel / change card) through Stripe's API.
 #      Without STRIPE_SECRET_KEY it stays private: only the email you enter.
 #   5. Deploys both and prints the address.
 #
@@ -36,6 +37,7 @@ SUPABASE_URL="https://dopfmtriwbxfoocwlpyc.supabase.co"
 SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRvcGZtdHJpd2J4Zm9vY3dscHljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ5NDQ1MDMsImV4cCI6MjExMDUyMDUwM30.9RF8pNOnqDTP54YoWvXL_veim5dyoZutQrQvwR3J1xY"
 KEY_FILE="$ROOT/.cloud-encryption-key"
 WEBHOOK_FILE="$ROOT/.stripe-webhook-secret"
+PORTAL_FILE="$ROOT/.stripe-portal-config"
 
 step() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 info() { printf '  %s\n' "$*"; }
@@ -233,6 +235,35 @@ if [ -n "$PAID" ]; then
   fi
   chmod 600 "$WEBHOOK_FILE"
   set_env backend STRIPE_WEBHOOK_SECRET "$(cat "$WEBHOOK_FILE")" sensitive
+
+  # The page where subscribers cancel or change their card (Stripe's customer portal).
+  if [ -s "$PORTAL_FILE" ]; then
+    info "Reusing the customer portal settings in .stripe-portal-config"
+  else
+    ANSWER="$(stripe_post billing_portal/configurations \
+      "business_profile[headline]=Manage your InterviewPilot plan" \
+      "business_profile[privacy_policy_url]=https://$WEB_HOST/privacy" \
+      "business_profile[terms_of_service_url]=https://$WEB_HOST/terms" \
+      "default_return_url=https://$WEB_HOST/" \
+      "features[subscription_cancel][enabled]=true" \
+      "features[subscription_cancel][mode]=at_period_end" \
+      "features[subscription_cancel][cancellation_reason][enabled]=true" \
+      "features[subscription_cancel][cancellation_reason][options][]=too_expensive" \
+      "features[subscription_cancel][cancellation_reason][options][]=unused" \
+      "features[subscription_cancel][cancellation_reason][options][]=other" \
+      "features[payment_method_update][enabled]=true" \
+      "features[invoice_history][enabled]=true" \
+      "features[customer_update][enabled]=false")"
+    PORTAL_ID="$(printf '%s' "$ANSWER" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))' 2>/dev/null)"
+    if [ -z "$PORTAL_ID" ]; then
+      REASON="$(printf '%s' "$ANSWER" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("error",{}).get("message","no answer"))' 2>/dev/null)"
+      fail "Stripe didn't set up the customer portal: $REASON"
+    fi
+    printf '%s' "$PORTAL_ID" >"$PORTAL_FILE"
+    unset ANSWER
+    info "Customer portal set up (subscribers can cancel and update their card)"
+  fi
+  set_env backend STRIPE_PORTAL_CONFIG "$(cat "$PORTAL_FILE")" config
   set_env backend APP_URL "https://$WEB_HOST" config
   info "Redeploying the backend with payment settings..."
   (cd backend && vc deploy --prod --yes --json >/dev/null 2>"$ROOT/.logs-deploy-api.txt") ||
