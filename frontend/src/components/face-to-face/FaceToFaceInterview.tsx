@@ -452,10 +452,10 @@ export function FaceToFaceInterview({
               ? "Try again"
               : status === "ended"
                 ? paid
-                  ? "Start another interview (1 credit)"
+                  ? "Start another interview"
                   : "Start another interview"
                 : paid
-                  ? "Start interview (1 credit)"
+                  ? "Start interview"
                   : "Start interview"}
           </button>
         )}

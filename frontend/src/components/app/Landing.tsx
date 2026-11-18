@@ -48,7 +48,7 @@ export function Landing() {
 
       <section className="ip-card">
         <h2>Pricing</h2>
-        <p className="ip-muted" style={{ marginTop: 0 }}>Buy interviews after you sign in. No subscription.</p>
+        <p className="ip-muted" style={{ marginTop: 0 }}>Pay per interview, or subscribe monthly. Buy after you sign in.</p>
         <Pricing canBuy={false} />
       </section>
 

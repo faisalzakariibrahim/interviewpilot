@@ -17,6 +17,7 @@ import {
   deleteSession,
   fetchJob,
   getBillingStatus,
+  openBillingPortal,
   getHealth,
   getSession,
   listInterviews,
@@ -165,7 +166,18 @@ export default function Home() {
       }
     }
   }, [mounted, signedIn, paid, refreshBalance]);
-  const outOfCredits = paid && balance !== null && !balance.unlimited && balance.credits < 1;
+  const planOpen = Boolean(balance?.plan?.active && balance.plan.used < balance.plan.limit);
+  const outOfCredits = paid && balance !== null && !balance.unlimited && !planOpen && balance.credits < 1;
+  const [portalBusy, setPortalBusy] = useState(false);
+  async function managePlan() {
+    setPortalBusy(true);
+    try {
+      window.location.assign(await openBillingPortal());
+    } catch (error) {
+      setCheckoutNote(error instanceof Error ? error.message : "Couldn't open plan settings.");
+      setPortalBusy(false);
+    }
+  }
 
   // The backend may have lost the remembered session: check it still exists there.
   const sessionId = store.session?.id ?? null;
@@ -278,7 +290,9 @@ export default function Home() {
           ? "This server is missing its Nuance key."
           : "Add your Nuance API key first (see above)."
         : outOfCredits
-          ? "You're out of interviews. Buy more below."
+          ? balance?.plan?.active
+            ? "You've used this month's plan interviews. Buy single interviews below to keep going."
+            : "You're out of interviews. Buy one below or start the monthly plan."
           : null;
 
   return (
@@ -355,18 +369,36 @@ export default function Home() {
                 ? "Interviews"
                 : balance.unlimited
                   ? "Unlimited interviews (owner)"
-                  : `${balance.credits} interview${balance.credits === 1 ? "" : "s"} left`}
+                  : balance.plan?.active
+                    ? `Monthly plan: ${Math.max(balance.plan.limit - balance.plan.used, 0)} of ${balance.plan.limit} left this month`
+                    : `${balance.credits} interview${balance.credits === 1 ? "" : "s"} left`}
             </h2>
-            {balance && !balance.unlimited && balance.credits > 0 && (
-              <button type="button" onClick={() => setShowPacks((v) => !v)}>
-                {showPacks ? "Hide prices" : "Buy more"}
-              </button>
-            )}
+            <div className="ip-row" style={{ gap: 8 }}>
+              {balance?.plan && (
+                <button type="button" onClick={() => void managePlan()} disabled={portalBusy}>
+                  {portalBusy ? "Opening" : "Manage plan"}
+                </button>
+              )}
+              {balance && !balance.unlimited && !outOfCredits && (
+                <button type="button" onClick={() => setShowPacks((v) => !v)}>
+                  {showPacks ? "Hide prices" : "Buy more"}
+                </button>
+              )}
+            </div>
           </div>
+          {balance?.plan?.active && (
+            <p className="ip-muted">
+              {balance.credits > 0 ? `Plus ${balance.credits} single interview${balance.credits === 1 ? "" : "s"}. ` : ""}
+              {balance.plan.cancel_at_period_end ? "Ends" : "Renews"} {new Date(balance.plan.renews_at).toLocaleDateString()}.
+            </p>
+          )}
+          {balance?.plan && !balance.plan.active && (
+            <p className="ip-muted">Your monthly plan isn&apos;t active ({balance.plan.status.replace(/_/g, " ")}).</p>
+          )}
           {checkoutNote && <p className="ip-muted">{checkoutNote}</p>}
-          {balance && !balance.unlimited && (balance.credits < 1 || showPacks) && (
+          {balance && !balance.unlimited && (outOfCredits || showPacks) && (
             <div style={{ marginTop: 12 }}>
-              <Pricing canBuy compact />
+              <Pricing canBuy compact hideMonthly={Boolean(balance.plan?.active)} />
             </div>
           )}
         </section>

@@ -59,11 +59,15 @@ token, never a service-role key. Back up `.cloud-encryption-key`: without it the
 Add `STRIPE_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to `backend/.env`, run `supabase/billing.sql`
 once, then run `./deploy-cloud.sh`. Anyone can then sign up; one credit is one interview.
 
-- Packs: 3 for $9, 10 for $24, 25 for $49 (change with the `IP_PACKS` setting). Admins in
-  `ip_admins` are unlimited.
-- The script registers a Stripe webhook (`checkout.session.completed`) and keeps its signing secret
+- Prices: $1 per interview (buy 1 to 50 at checkout; they never expire), or $10/month for up to
+  60 interviews a month. Change prices with the `IP_PACKS` setting; change the monthly cap in the
+  database (`update ip_private.settings set value = '80' where key = 'monthly_limit'`) and set
+  `IP_MONTHLY_LIMIT` on the backend to match. Admins in `ip_admins` are unlimited.
+- Customers cancel or change their card through Stripe's customer portal ("Manage plan"). Turn the
+  portal on once in Stripe: Settings → Billing → Customer portal → Save.
+- The script registers a Stripe webhook (checkout and subscription events) and keeps its signing secret
   in `.stripe-webhook-secret` (git-ignored). Credits are added only by that signed webhook, once per
-  checkout session, and only if the amount paid matches the pack.
+  checkout session, and only if the amount paid matches the price; the plan is switched on and off only by Stripe's subscription events.
 - Starting an interview spends a credit and returns a 45-minute grant. Planning, scoring, stronger
   answers and the video call all require that grant, with per-interview caps, so a credit can't be
   stretched into unlimited Claude or Nuance usage. A failed start retried within 35 minutes reuses it.

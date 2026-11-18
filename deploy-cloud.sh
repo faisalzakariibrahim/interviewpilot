@@ -219,7 +219,9 @@ if [ -n "$PAID" ]; then
     info "Reusing the webhook secret in .stripe-webhook-secret"
   else
     ANSWER="$(stripe_post webhook_endpoints "url=https://$API_HOST/api/stripe/webhook" \
-      "enabled_events[]=checkout.session.completed" "description=InterviewPilot credits")"
+      "enabled_events[]=checkout.session.completed" "enabled_events[]=checkout.session.async_payment_succeeded" \
+      "enabled_events[]=customer.subscription.created" "enabled_events[]=customer.subscription.updated" \
+      "enabled_events[]=customer.subscription.deleted" "description=InterviewPilot payments")"
     SECRET="$(printf '%s' "$ANSWER" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("secret",""))' 2>/dev/null)"
     if [ -z "$SECRET" ]; then
       REASON="$(printf '%s' "$ANSWER" | /usr/bin/python3 -c 'import json,sys; print(json.load(sys.stdin).get("error",{}).get("message","no answer"))' 2>/dev/null)"

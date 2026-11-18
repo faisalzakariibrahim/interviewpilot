@@ -138,21 +138,34 @@ export function modelAnswer(input: {
 
 export interface Pack {
   id: string;
-  credits: number;
+  /** credits: pay per interview, quantity picked at checkout. monthly: subscription. */
+  kind: "credits" | "monthly";
   price_cents: number;
   label: string;
+  max_quantity: number;
 }
 
 export interface Packs {
   enabled: boolean;
   currency: string;
   packs: Pack[];
+  monthly_limit?: number;
+}
+
+export interface MonthlyPlan {
+  status: string;
+  active: boolean;
+  renews_at: string;
+  cancel_at_period_end: boolean;
+  used: number;
+  limit: number;
 }
 
 export interface BillingStatus {
   enabled: boolean;
   credits: number;
   unlimited: boolean;
+  plan: MonthlyPlan | null;
 }
 
 /** Public: the price list (empty when payments are off). */
@@ -173,6 +186,11 @@ export function getBillingStatus(): Promise<BillingStatus> {
 /** Returns the Stripe Checkout address to send the person to. */
 export async function startCheckout(pack: string): Promise<string> {
   return (await call<{ url: string }>("/billing/checkout", { json: { pack } })).url;
+}
+
+/** Stripe's page to cancel the monthly plan or change the card. */
+export async function openBillingPortal(): Promise<string> {
+  return (await call<{ url: string }>("/billing/portal", { json: {} })).url;
 }
 
 /** Spends one credit and returns the interview's grant id ("local" when payments are off). */

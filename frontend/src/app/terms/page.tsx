@@ -29,9 +29,14 @@ export default function Terms() {
 
       <h2>Interviews and payment</h2>
       <ul>
-        <li>One credit is one interview. Prices are shown before you pay; payment is processed by Stripe.</li>
-        <li>A credit is used when an interview starts. If an interview fails to start, retrying within 35 minutes does not use another credit.</li>
-        <li>Credits do not expire. Unused credits can be refunded within 14 days of purchase on request.</li>
+        <li>Pay as you go: $1 per interview, bought in advance. Unused interviews don&apos;t expire and can be refunded within 14 days of purchase on request.</li>
+        <li>
+          Monthly plan: $10 a month, renewing automatically until you cancel. It includes up to 60 interviews per billing
+          month (fair use); unused ones don&apos;t carry over. Cancel any time from &quot;Manage plan&quot;: the plan stays
+          active until the end of the month you paid for, and there are no refunds for part of a month.
+        </li>
+        <li>Prices are shown before you pay, and payment is processed by Stripe.</li>
+        <li>An interview is used when it starts. If it fails to start, retrying within 35 minutes doesn&apos;t use another one.</li>
         <li>The interviewer service is in preview and can be unavailable or end a call early. If that costs you an interview, contact us and we will restore the credit.</li>
       </ul>
 
