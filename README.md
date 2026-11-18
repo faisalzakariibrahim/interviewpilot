@@ -57,7 +57,7 @@ token, never a service-role key. Back up `.cloud-encryption-key`: without it the
 ### Paid mode (sell interviews to other job seekers)
 
 Add `STRIPE_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to `backend/.env`, run `supabase/billing.sql`
-once, then run `./deploy-cloud.sh`. Anyone can then sign up.
+and `supabase/hardening.sql` once, then run `./deploy-cloud.sh`. Anyone can then sign up.
 
 - Pricing: every new account gets 1 free interview, then $10/month for up to 60 interviews a month.
   Change the free count or the cap in the database
