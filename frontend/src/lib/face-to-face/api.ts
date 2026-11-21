@@ -7,6 +7,7 @@ import { authHeaders } from "../auth";
 import type { FaceToFaceResult } from "./store";
 
 export const BACKEND = "/api/backend";
+const CLOUD_BUILD = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 export interface PlannedQuestion {
   id: string;
@@ -76,7 +77,12 @@ async function call<T>(
     });
   } catch (error) {
     if (init.signal?.aborted) throw error;
-    throw new BackendError("The InterviewPilot backend isn't reachable. Is it still running?", 0);
+    throw new BackendError(
+      CLOUD_BUILD
+        ? "Couldn't reach InterviewPilot. Check your internet connection and try again."
+        : "The InterviewPilot backend isn't reachable. Is it still running?",
+      0,
+    );
   }
   if (!response.ok) throw new BackendError(await readDetail(response), response.status);
   if (response.status === 204) return undefined as T;
@@ -239,13 +245,47 @@ export async function getHealth(): Promise<BackendHealth | null> {
   }
 }
 
+const MAX_RESUME_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Reads the chosen file fully before uploading. On phones, a file picked from another app
+ * (WhatsApp, Drive, email) is often a temporary link that breaks mid-upload; reading it first
+ * turns that into a clear message instead of a "can't reach the server" error.
+ */
+async function readResume(file: File): Promise<Blob> {
+  if (file.size > MAX_RESUME_BYTES) throw new BackendError("That file is over 4 MB. Upload a smaller copy.", 413);
+  try {
+    const bytes = await file.arrayBuffer();
+    if (!bytes.byteLength) throw new Error("empty");
+    return new Blob([bytes], { type: file.type || "application/octet-stream" });
+  } catch {
+    throw new BackendError(
+      "Your phone couldn't open that file. Save the resume to your device first (for example to Downloads or Files), then choose it again.",
+      0,
+    );
+  }
+}
+
 /** Uploads the resume; the backend extracts the text, strips contact details and indexes it. */
-export function createSession(input: { role: string; jobDescription: string; resume: File }): Promise<SessionMeta> {
-  const form = new FormData();
-  form.set("role", input.role);
-  form.set("job_description", input.jobDescription);
-  form.set("resume", input.resume);
-  return call("/sessions", { form });
+export async function createSession(input: { role: string; jobDescription: string; resume: File }): Promise<SessionMeta> {
+  const resume = await readResume(input.resume);
+  const send = () => {
+    const form = new FormData();
+    form.set("role", input.role);
+    form.set("job_description", input.jobDescription);
+    form.set("resume", resume, input.resume.name || "resume");
+    return call<SessionMeta>("/sessions", { form });
+  };
+  try {
+    return await send();
+  } catch (error) {
+    // One retry for a dropped mobile connection; real refusals (4xx/5xx) aren't retried.
+    if (error instanceof BackendError && error.status === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      return send();
+    }
+    throw error;
+  }
 }
 
 /** The session, null when the backend no longer has it, undefined when it can't be checked. */

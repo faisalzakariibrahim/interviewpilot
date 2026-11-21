@@ -42,9 +42,24 @@ def _docx(data: bytes) -> str:
     return "\n".join(parts)
 
 
+def _sniff(data: bytes) -> str:
+    """The file type from its first bytes, for phones that send files without an extension."""
+    if data.startswith(b"%PDF"):
+        return ".pdf"
+    if data.startswith(b"PK") and b"word/" in data[:65536]:
+        return ".docx"
+    try:
+        data[:4096].decode("utf-8")
+    except UnicodeDecodeError:
+        return ""
+    return ".txt" if b"\x00" not in data[:4096] else ""
+
+
 def extract_text(filename: str, data: bytes) -> str:
     """Returns the resume's text, tidied. Raises ResumeError with what went wrong."""
     suffix = PurePath(filename or "").suffix.lower()
+    if not suffix or suffix not in SUPPORTED and not suffix[1:].isalpha():
+        suffix = _sniff(data)  # no real extension, e.g. "Resume" or "Resume (1)" from a phone
     if suffix not in SUPPORTED:
         raise ResumeError("Upload a PDF, DOCX, TXT or MD file.")
     if not data:

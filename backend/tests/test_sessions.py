@@ -291,3 +291,9 @@ def test_cloud_mode_without_settings_refuses_everything(monkeypatch, tmp_path) -
     for method, path in (("get", "/api/health"), ("get", "/api/interviews"), ("post", "/api/sessions")):
         response = getattr(client, method)(path)
         assert response.status_code == 503 and "SUPABASE_URL" in response.json()["detail"]
+
+
+def test_a_phone_file_without_an_extension_is_recognised() -> None:
+    from app.resume_parser import extract_text
+    pdf_like = extract_text("Tariq Resume", b"Telecom engineer, fiber and RF planning, 6 years across West Africa.")
+    assert "Telecom engineer" in pdf_like
