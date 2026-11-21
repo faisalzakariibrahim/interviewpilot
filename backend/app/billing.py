@@ -409,11 +409,15 @@ def build_billing_router(billing: Billing, current_user: Callable[..., Any]) -> 
 
     @router.post("/api/billing/authorize-call")
     async def authorize_call(
-        user: User = who, grant: Optional[str] = Header(default=None, alias=GRANT_HEADER)
+        user: User = who,
+        grant: Optional[str] = Header(default=None, alias=GRANT_HEADER),
+        confirm: bool = False,
     ) -> Dict[str, str]:
-        """For the web app's server, before it mints an interviewer token."""
+        """For the web app's server. Without `confirm`: may this interview start a video call?
+        With `confirm=true`, after Nuance actually started one: count it. An interview whose
+        calls never started is refunded when it expires."""
         try:
-            await billing.use(user, grant, "call")
+            await billing.use(user, grant, "call" if confirm else "call_check")
         except BillingError as error:
             raise fail(error) from error
         return {"ref": user_ref(user)}

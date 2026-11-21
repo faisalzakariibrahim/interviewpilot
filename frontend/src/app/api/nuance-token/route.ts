@@ -62,11 +62,38 @@ export async function GET(): Promise<Response> {
  * that is sent to Nuance instead of anything that identifies the person.
  * Local: the page's random id is used.
  */
+/** After Nuance started the session: count the call against the interview's grant. */
+async function confirmCall(request: Request): Promise<void> {
+  const authorization = request.headers.get("authorization");
+  const grant = request.headers.get("x-interview-grant");
+  if (!authorization || !grant) return;
+  try {
+    await fetch(`${BACKEND_URL}/api/billing/authorize-call?confirm=true`, {
+      method: "POST",
+      headers: { Authorization: authorization, "X-Interview-Grant": grant },
+      cache: "no-store",
+    });
+  } catch (error) {
+    console.error("[nuance-token] Couldn't record the call:", error);
+  }
+}
+
+/** "in about 3 hours" until Nuance's daily credits renew. */
+function untilRenewal(renewsAt: unknown): string {
+  const when = typeof renewsAt === "string" ? Date.parse(renewsAt) : NaN;
+  if (!Number.isFinite(when)) return "later today";
+  const minutes = Math.max(1, Math.round((when - Date.now()) / 60000));
+  if (minutes < 60) return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.round(minutes / 60);
+  return `in about ${hours} hour${hours === 1 ? "" : "s"}`;
+}
+
 async function whoIsAsking(request: Request): Promise<{ ref: string } | Response> {
   const authorization = request.headers.get("authorization");
   if (!authorization) return refuse(401, "Sign in first.");
   try {
-    // The backend checks the sign-in and, in paid mode, counts this call against the interview's grant.
+    // The backend checks the sign-in and, in paid mode, that this interview may still start a call.
+    // The call is only counted after Nuance actually starts it (see confirmCall).
     const grant = request.headers.get("x-interview-grant");
     const response = await fetch(`${BACKEND_URL}/api/billing/authorize-call`, {
       method: "POST",
@@ -161,10 +188,28 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!response.ok) {
-    // For you, in the server log. The page gets a generic message.
-    console.error(
-      `[nuance-token] POST /session-tokens answered ${response.status}: ${await response.text()}`,
-    );
+    // For you, in the server log. The page gets a plain-English message.
+    const text = await response.text();
+    console.error(`[nuance-token] POST /session-tokens answered ${response.status}: ${text}`);
+    let info: { code?: string; renews_at?: string } = {};
+    try {
+      info = JSON.parse(text) as typeof info;
+    } catch {
+      /* not JSON */
+    }
+    const notCharged = CLOUD ? " Your interview isn't used up: it comes back to your account automatically." : "";
+    if (response.status === 429 && info.code === "credits_spent") {
+      return refuse(
+        503,
+        `The video interviewer has reached its daily limit. It's available again ${untilRenewal(info.renews_at)}.${notCharged}`,
+      );
+    }
+    if (response.status === 429) {
+      return refuse(503, `The video interviewer is busy right now. Try again in a minute.${notCharged}`);
+    }
+    if (response.status >= 500) {
+      return refuse(503, `The video interviewer is having problems right now. Try again in a few minutes.${notCharged}`);
+    }
     if (response.status === 401) {
       return refuse(
         502,
@@ -173,7 +218,12 @@ export async function POST(request: Request): Promise<Response> {
           : "Nuance didn't accept the API key. Check NUANCE_API_KEY in frontend/.env.local.",
       );
     }
-    return refuse(502, "Couldn't start a face-to-face session right now. Details are in .logs/frontend.log.");
+    return refuse(
+      502,
+      CLOUD
+        ? "Couldn't start the video interview right now. Try again in a few minutes."
+        : "Couldn't start a face-to-face session right now. Details are in .logs/frontend.log.",
+    );
   }
 
   const { token, warnings } = (await response.json()) as {
@@ -181,5 +231,6 @@ export async function POST(request: Request): Promise<Response> {
     warnings?: string[];
   };
   if (warnings?.length) console.warn("[nuance-token] warnings:", warnings);
+  await confirmCall(request);
   return Response.json({ token });
 }

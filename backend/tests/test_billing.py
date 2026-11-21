@@ -93,6 +93,8 @@ class FakeBackend(FakeSupabase):
         if fn == "ip_use_grant":
             g = self.grants.get(args["grant_id"])
             limits = {"plan": 2, "score": 40, "call": 3, "answer": 15}
+            if args["kind"] == "call_check":
+                return httpx.Response(200, json=bool(g and g["user"] == user["id"] and g["call"] < limits["call"]))
             if not g or g["user"] != user["id"] or g[args["kind"]] >= limits[args["kind"]]:
                 return httpx.Response(200, json=False)
             g[args["kind"]] += 1
@@ -305,3 +307,16 @@ def test_admin_overview_is_owner_only(paid) -> None:
     assert client.get("/api/admin/overview").status_code == 401
     body = client.get("/api/admin/overview", headers=h("tok-me")).json()
     assert body["totals"]["monthly_revenue_cents"] == 2000 and body["currency"] == "usd"
+
+
+def test_a_call_counts_only_when_confirmed(paid) -> None:
+    client, fake = paid
+    client.post("/api/stripe/webhook", **signed(paid_event(OTHER)))
+    grant = client.post("/api/billing/start", headers=h("tok-other")).json()["grant_id"]
+    for _ in range(5):  # checks never use anything up
+        assert client.post("/api/billing/authorize-call", headers=h("tok-other", grant)).status_code == 200
+    assert fake.grants[grant]["call"] == 0
+    for _ in range(3):
+        assert client.post("/api/billing/authorize-call?confirm=true", headers=h("tok-other", grant)).status_code == 200
+    assert fake.grants[grant]["call"] == 3
+    assert client.post("/api/billing/authorize-call", headers=h("tok-other", grant)).status_code == 402
