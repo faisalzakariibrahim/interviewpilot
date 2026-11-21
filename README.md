@@ -44,7 +44,7 @@ The same app can run on Vercel with Supabase, for use from any device:
 1. Create a Supabase project and run `supabase/schema.sql`, then add your email:
    `insert into public.ip_allowed_emails values ('you@example.com');`
 2. Put your Supabase URL and anon key at the top of `deploy-cloud.sh`.
-3. Run `./deploy-cloud.sh`. It signs in to Vercel, creates two projects (backend + web app),
+3. Run `./deploy-cloud.sh` once. It signs in to Vercel, creates two projects (backend + web app),
    copies your keys from `backend/.env` and `frontend/.env.local` into Vercel as write-only
    secrets, generates `DATA_ENCRYPTION_KEY` (kept in `.cloud-encryption-key`, git-ignored), and deploys.
 4. In Supabase → Authentication → URL Configuration, set Site URL and a Redirect URL to the web app's address.
@@ -53,6 +53,9 @@ Cloud privacy: sign-in is limited to allowlisted emails (checked by the backend 
 row-level security in Postgres); resumes, notes and interviews are AES-256-GCM encrypted before
 they reach the database, with a key the database never holds; the backend uses each user's own
 token, never a service-role key. Back up `.cloud-encryption-key`: without it the cloud data can't be read.
+
+Updates deploy from GitHub: both Vercel projects are connected to this repo (root folders `frontend` and
+`backend`), so every push to `main` goes live automatically. Re-run `./deploy-cloud.sh` only to change keys.
 
 ### Paid mode (sell interviews to other job seekers)
 
