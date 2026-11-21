@@ -45,6 +45,8 @@ begin
       select coalesce(json_agg(row_to_json(x) order by x.signed_up desc), '[]'::json) from (
         select
           u.email,
+          coalesce(u.raw_user_meta_data ->> 'first_name', u.raw_user_meta_data ->> 'given_name', '') as name,
+          coalesce(u.raw_app_meta_data ->> 'provider', 'email') as provider,
           u.created_at as signed_up,
           u.last_sign_in_at as last_sign_in,
           u.email_confirmed_at is not null as confirmed,

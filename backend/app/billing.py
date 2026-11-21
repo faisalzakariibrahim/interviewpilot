@@ -34,7 +34,7 @@ def stripe_api() -> str:
 GRANT_HEADER = "x-interview-grant"
 SIGNATURE_TOLERANCE_SECONDS = 300
 
-# Every account starts with one free interview (set in the database: ip_private.settings 'free_credits').
+# Every account starts with 3 free interviews (set in the database: ip_private.settings 'free_credits').
 # "monthly": a subscription; interviews are included while it's active, up to the monthly_limit
 #   set in the database (ip_private.settings, default 60).
 # "credits": optional one-time purchase (credits = quantity picked at checkout). Off by default;
@@ -136,7 +136,7 @@ class Billing:
         if "plan_limit" in response.text:
             raise BillingError("You've used this month's interviews on your plan. They reset when it renews.", 402)
         if "no_credits" in response.text:
-            raise BillingError("You've used your free interview. Subscribe to keep practising.", 402)
+            raise BillingError("You've used your 3 free interviews. Subscribe to keep practising.", 402)
         if "not_admin" in response.text:
             raise BillingError("Only the owner can see this page.", 403)
         if response.status_code in (401, 403):

@@ -4,7 +4,6 @@
 
 import Link from "next/link";
 import { Pricing } from "./Pricing";
-import { SignIn } from "./SignIn";
 
 const STEPS = [
   {
@@ -32,6 +31,11 @@ export function Landing() {
           A video AI interviewer asks questions built from your resume and the job you want, then scores every
           answer and shows you how to say it better.
         </p>
+        <div className="ip-row" style={{ gap: 12, marginTop: 20, flexWrap: "wrap" }}>
+          <Link href="/signup" className="ip-primary ip-cta">Sign up free</Link>
+          <Link href="/login" className="ip-ghost ip-cta">Log in</Link>
+        </div>
+        <p className="ip-muted" style={{ fontSize: 14, marginBottom: 0 }}>Your first 3 interviews are free. No card needed.</p>
       </section>
 
       <section className="ip-card" style={{ marginTop: 24 }}>
@@ -48,11 +52,18 @@ export function Landing() {
 
       <section className="ip-card">
         <h2>Pricing</h2>
-        <p className="ip-muted" style={{ marginTop: 0 }}>Your first interview is free. After that, subscribe monthly; cancel any time.</p>
+        <p className="ip-muted" style={{ marginTop: 0 }}>Your first 3 interviews are free. After that, subscribe monthly; cancel any time.</p>
         <Pricing canBuy={false} />
       </section>
 
-      <SignIn />
+      <section className="ip-card" style={{ textAlign: "center" }}>
+        <h2 style={{ marginTop: 0 }}>Ready for your next interview?</h2>
+        <p className="ip-muted">Create an account in under a minute and practise your first 3 interviews free.</p>
+        <Link href="/signup" className="ip-primary ip-cta">Create a free account</Link>
+        <p style={{ marginBottom: 0 }}>
+          Already have one? <Link href="/login">Log in</Link>
+        </p>
+      </section>
 
       <section className="ip-card">
         <h2>Your data</h2>

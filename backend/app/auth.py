@@ -60,7 +60,9 @@ class SupabaseAuth:
             # Same answer for every refusal: don't reveal who is allowed.
             raise HTTPException(status_code=403, detail="This account doesn't have access.")
 
-        user = User(id=str(data["id"]), email=email, access_token=token)
+        meta = data.get("user_metadata") or {}
+        name = meta.get("first_name") or meta.get("given_name") or str(meta.get("full_name") or "").split(" ")[0]
+        user = User(id=str(data["id"]), email=email, access_token=token, first_name=str(name or "").strip()[:40])
         if len(self._cache) > 500:
             self._cache.clear()
         self._cache[key] = (time.monotonic() + _CACHE_SECONDS, user)

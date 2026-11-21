@@ -24,6 +24,7 @@ from .auth import LOCAL_USER, LocalAuth, SupabaseAuth
 from .billing import Billing, BillingError, build_billing_router, grant_guard
 from .crypto import CryptoError, Sealer
 from .routers.account import build_account_router
+from .welcome import Welcomer, build_welcome_router
 from .routers.jobs import build_jobs_router
 from .routers.face_to_face import DEFAULT_MODEL, build_face_to_face_router, default_client_factory
 from .routers.sessions import build_sessions_router
@@ -57,7 +58,11 @@ def _misconfigured_app(problem: str) -> FastAPI:
 
 
 def create_app(
-    mode: Optional[str] = None, store: Optional[Store] = None, auth: Any = None, billing: Optional[Billing] = None
+    mode: Optional[str] = None,
+    store: Optional[Store] = None,
+    auth: Any = None,
+    billing: Optional[Billing] = None,
+    welcomer: Optional[Welcomer] = None,
 ) -> FastAPI:
     refresh_env()
     mode = (mode or os.getenv("INTERVIEWPILOT_MODE") or "local").strip().lower()
@@ -142,6 +147,13 @@ def create_app(
     application.include_router(build_jobs_router(auth, client_factory, before_fetch=count_job_fetch))
     application.include_router(build_billing_router(billing, auth))
     application.include_router(build_account_router(store, auth, mode))
+    if welcomer is not None or (mode == "cloud" and os.getenv("SUPABASE_URL")):
+        application.include_router(
+            build_welcome_router(
+                welcomer or Welcomer(os.environ["SUPABASE_URL"], os.getenv("SUPABASE_ANON_KEY", ""), os.getenv("APP_URL", "")),
+                auth,
+            )
+        )
     application.include_router(
         build_face_to_face_router(
             retrieve,

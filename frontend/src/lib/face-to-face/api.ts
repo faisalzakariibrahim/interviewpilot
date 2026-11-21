@@ -352,6 +352,8 @@ export function deleteAllMyData(): Promise<void> {
 
 export interface AdminUser {
   email: string;
+  name: string;
+  provider: string;
   signed_up: string;
   last_sign_in: string | null;
   confirmed: boolean;
@@ -380,4 +382,14 @@ export interface AdminOverview {
 /** Owner only: the backend and the database both refuse anyone else. */
 export function getAdminOverview(): Promise<AdminOverview> {
   return call("/admin/overview");
+}
+
+
+/** Asks the server to send this account's one-time welcome email. Never throws. */
+export async function requestWelcomeEmail(): Promise<void> {
+  try {
+    await call("/account/welcome", { json: {} });
+  } catch {
+    /* not essential */
+  }
 }

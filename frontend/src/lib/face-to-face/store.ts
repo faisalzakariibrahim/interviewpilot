@@ -58,6 +58,9 @@ interface FaceToFaceState {
   /** The practice session in use: which resume and role. The resume itself lives in the backend. */
   session: SessionMeta | null;
   questionCount: number;
+  /** The welcome email was requested for this account (the server sends it at most once). */
+  welcomeRequested: boolean;
+  setWelcomeRequested: () => void;
   setSession: (session: SessionMeta | null) => void;
   setQuestionCount: (count: number) => void;
   acceptDisclosure: () => void;
@@ -89,6 +92,7 @@ function personalDefaults() {
     results: [] as FaceToFaceResult[],
     session: null,
     questionCount: 5,
+    welcomeRequested: false,
   };
 }
 
@@ -106,6 +110,8 @@ export const useFaceToFaceStore = create<FaceToFaceState>()(
       results: [],
       session: null,
       questionCount: 5,
+      welcomeRequested: false,
+      setWelcomeRequested: () => set({ welcomeRequested: true }),
       setSession: (session) => set({ session }),
       setQuestionCount: (questionCount) => set({ questionCount }),
       acceptDisclosure: () =>

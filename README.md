@@ -62,7 +62,7 @@ Updates deploy from GitHub: both Vercel projects are connected to this repo (roo
 Add `STRIPE_SECRET_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to `backend/.env`, run `supabase/billing.sql`
 , `supabase/hardening.sql` and `supabase/admin.sql` once, then run `./deploy-cloud.sh`. Anyone can then sign up.
 
-- Pricing: every new account gets 1 free interview, then $10/month for up to 60 interviews a month.
+- Pricing: every new account gets 3 free interviews, then $10/month for up to 60 interviews a month.
   Change the free count or the cap in the database
   (`update ip_private.settings set value = '2' where key = 'free_credits'`, or `'monthly_limit'`);
   if you change the cap, set `IP_MONTHLY_LIMIT` on the backend to match the price card. Single-interview

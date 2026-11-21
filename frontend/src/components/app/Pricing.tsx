@@ -54,11 +54,11 @@ export function Pricing({
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
         {!canBuy && (
           <div style={{ background: "var(--ip-surface-2)", border: "1px solid var(--ip-border)", borderRadius: 12, padding: compact ? 14 : 18 }}>
-            <p style={{ margin: 0, fontWeight: 600 }}>First interview</p>
+            <p style={{ margin: 0, fontWeight: 600 }}>First 3 interviews</p>
             <p style={{ margin: "6px 0 0" }}>
               <span style={{ fontSize: compact ? 22 : 28, fontWeight: 700 }}>Free</span>
             </p>
-            <p className="ip-muted" style={{ margin: "6px 0 12px" }}>Every new account gets one full interview with scorecard. No card needed.</p>
+            <p className="ip-muted" style={{ margin: "6px 0 12px" }}>Every new account gets 3 full interviews with scorecards. No card needed.</p>
           </div>
         )}
         {shown.map((pack) => {

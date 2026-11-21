@@ -29,7 +29,7 @@ export default function Terms() {
 
       <h2>Interviews and payment</h2>
       <ul>
-        <li>Every new account gets one free interview. One account per person; extra accounts made to get more free interviews may be closed.</li>
+        <li>Every new account gets 3 free interviews. One account per person; extra accounts made to get more free interviews may be closed.</li>
         <li>
           Monthly plan: $10 a month, renewing automatically until you cancel. It includes up to 60 interviews per billing
           month (fair use); unused ones don&apos;t carry over. Cancel any time from &quot;Manage plan&quot;: the plan stays

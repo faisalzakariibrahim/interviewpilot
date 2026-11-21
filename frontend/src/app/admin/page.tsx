@@ -89,7 +89,7 @@ function planLabel(user: AdminUser): string {
   if (user.admin) return "Owner";
   if (user.subscribed) return user.plan_cancelling ? "Monthly (cancelling)" : "Monthly";
   if (user.plan_status) return `Plan ${user.plan_status.replace(/_/g, " ")}`;
-  return user.free_left > 0 ? "Free interview left" : "Free used";
+  return user.free_left > 0 ? `${user.free_left} free left` : "Free used up";
 }
 
 export default function AdminPage() {
@@ -213,7 +213,9 @@ export default function AdminPage() {
                   {users.map((user) => (
                     <tr key={user.email + user.signed_up}>
                       <td style={cell}>
+                        {user.name && <strong style={{ fontWeight: 600 }}>{user.name} </strong>}
                         {user.email}
+                        {user.provider === "google" && <span className="ip-muted"> · Google</span>}
                         {!user.confirmed && <span className="ip-muted"> (unconfirmed)</span>}
                       </td>
                       <td style={cell}>

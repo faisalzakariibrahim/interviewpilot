@@ -1,6 +1,6 @@
 -- InterviewPilot paid accounts. Run after schema.sql.
 --
--- Every account starts with one free interview (a credit); after that, a monthly plan with a fair-use cap.
+-- Every account starts with 3 free interviews (credits); after that, a monthly plan with a fair-use cap.
 -- Credits and plans can only change inside the security-definer functions below:
 --   ip_start_interview()   uses the monthly plan if active, else one credit (admins: free), and opens a grant
 --   ip_use_grant()         counts calls made under a grant, within fixed limits
@@ -105,9 +105,9 @@ $$;
 revoke all on function ip_private.is_admin() from public, anon;
 grant execute on function ip_private.is_admin() to authenticated;
 
--- Every new sign-up gets an account row with the free interviews configured (default 1).
+-- Every new sign-up gets an account row with the free interviews configured (default 3).
 create table if not exists ip_private.settings (key text primary key, value text not null);
-insert into ip_private.settings values ('free_credits', '1') on conflict do nothing;
+insert into ip_private.settings values ('free_credits', '3') on conflict do nothing;
 insert into ip_private.settings values ('monthly_limit', '60') on conflict do nothing;
 revoke all on ip_private.settings from public, anon, authenticated;
 

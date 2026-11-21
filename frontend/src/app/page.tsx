@@ -17,6 +17,7 @@ import {
   deleteSession,
   fetchJob,
   getBillingStatus,
+  requestWelcomeEmail,
   openBillingPortal,
   getHealth,
   getSession,
@@ -189,6 +190,15 @@ export default function Home() {
     if (mounted && currentUserId && storeOwner !== currentUserId) resetStoreFor(currentUserId);
   }, [mounted, currentUserId, storeOwner, resetStoreFor]);
 
+  // New accounts get one welcome email (the server keeps it to once per account).
+  const welcomeRequested = store.welcomeRequested;
+  const setWelcomeRequested = store.setWelcomeRequested;
+  useEffect(() => {
+    if (!mounted || !currentUserId || !storeIsMine || welcomeRequested || !backendUp) return;
+    setWelcomeRequested();
+    void requestWelcomeEmail();
+  }, [mounted, currentUserId, storeIsMine, welcomeRequested, backendUp, setWelcomeRequested]);
+
   // A remembered resume is shown only after the backend confirms it belongs to this account.
   const sessionId = store.session?.id ?? null;
   const setSession = store.setSession;
@@ -208,6 +218,16 @@ export default function Home() {
   }, [mounted, signedIn, storeIsMine, sessionId, backendUp, setSession, confirmedSessionId]);
   const activeSession = storeIsMine && store.session && confirmedSessionId === store.session.id ? store.session : null;
   const checkingSession = Boolean(storeIsMine && store.session && !activeSession);
+  // First visit after signing up: free interview unused, no plan, nothing practised yet.
+  const isNewcomer =
+    paid &&
+    balance !== null &&
+    !balance.unlimited &&
+    !balance.plan &&
+    balance.credits > 0 &&
+    history.loaded &&
+    history.items.length === 0 &&
+    !activeSession;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -291,6 +311,10 @@ export default function Home() {
       <main className="ip-shell">
         <header className="ip-header">
           <h1>InterviewPilot</h1>
+          <span className="ip-row" style={{ gap: 8 }}>
+            <a href="/login" className="ip-ghost" style={{ padding: "8px 12px", borderRadius: 8, textDecoration: "none" }}>Log in</a>
+            <a href="/signup" className="ip-primary" style={{ padding: "8px 12px", borderRadius: 8, textDecoration: "none" }}>Sign up</a>
+          </span>
         </header>
         <Landing />
       </main>
@@ -310,7 +334,7 @@ export default function Home() {
         : outOfCredits
           ? balance?.plan?.active
             ? "You've used this month's plan interviews. They reset when your plan renews."
-            : "You've used your free interview. Subscribe below to keep practising."
+            : "You've used your 3 free interviews. Subscribe below to keep practising."
           : null;
 
   return (
@@ -382,6 +406,20 @@ export default function Home() {
           , open <code>frontend/.env.local</code>, paste it after <code>NUANCE_API_KEY=</code> and save. It
           powers the video interviewer.
         </div>
+      )}
+
+      {isNewcomer && (
+        <section className="ip-card" aria-labelledby="welcome-title" style={{ borderColor: "var(--ip-accent)" }}>
+          <h2 id="welcome-title" style={{ marginTop: 0 }}>
+            Welcome{auth.status === "signed-in" && auth.firstName ? `, ${auth.firstName}` : ""}! Your first 3 interviews are free.
+          </h2>
+          <ol style={{ margin: "0 0 12px", paddingLeft: 20, lineHeight: 1.7 }}>
+            <li>Upload your resume and the role you want below (a job link works too).</li>
+            <li>Turn on face-to-face practice and start: a video interviewer asks questions from your experience.</li>
+            <li>Get a scorecard for every answer, with a stronger version built from what you&apos;ve actually done.</li>
+          </ol>
+          <a href="#setup-title" className="ip-primary ip-cta">Set up my first interview</a>
+        </section>
       )}
 
       {paid && (
@@ -479,7 +517,7 @@ export default function Home() {
         </>
       ) : (
         <section className="ip-card">
-          <h2>Set up a practice interview</h2>
+          <h2 id="setup-title">Set up a practice interview</h2>
           <p className="ip-muted" style={{ margin: 0 }}>
             {CLOUD
               ? "Your resume is read on the server, email addresses, phone numbers and links are removed, and the passages are stored encrypted so only you can read them. The file itself isn't kept."

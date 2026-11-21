@@ -110,6 +110,8 @@ fi
 chmod 600 "$KEY_FILE"
 
 FIRECRAWL_API_KEY="$(read_env FIRECRAWL_API_KEY backend/.env)"
+SMTP_USER="$(read_env SMTP_USER backend/.env)"
+SMTP_PASSWORD="$(read_env SMTP_PASSWORD backend/.env)"
 STRIPE_SECRET_KEY="$(read_env STRIPE_SECRET_KEY backend/.env)"
 SUPABASE_SERVICE_ROLE_KEY="$(read_env SUPABASE_SERVICE_ROLE_KEY backend/.env)"
 if [ -n "$FIRECRAWL_API_KEY" ]; then info "Firecrawl key found (not shown)"; else info "No FIRECRAWL_API_KEY: job links use the built-in reader"; fi
@@ -173,6 +175,10 @@ set_env backend ALLOWED_EMAILS "$ALLOWED_EMAILS" sensitive
 set_env backend ANTHROPIC_API_KEY "$ANTHROPIC_API_KEY" sensitive
 set_env backend DATA_ENCRYPTION_KEY "$DATA_ENCRYPTION_KEY" sensitive
 if [ -n "$FIRECRAWL_API_KEY" ]; then set_env backend FIRECRAWL_API_KEY "$FIRECRAWL_API_KEY" sensitive; fi
+if [ -n "$SMTP_USER" ] && [ -n "$SMTP_PASSWORD" ]; then
+  set_env backend SMTP_USER "$SMTP_USER" config
+  set_env backend SMTP_PASSWORD "$SMTP_PASSWORD" sensitive
+fi
 if [ -n "$PAID" ]; then
   set_env backend INTERVIEWPILOT_BILLING on config
   set_env backend STRIPE_SECRET_KEY "$STRIPE_SECRET_KEY" sensitive
@@ -274,7 +280,7 @@ if [ -n "$PAID" ]; then
   esac
 fi
 
-unset ANTHROPIC_API_KEY NUANCE_API_KEY DATA_ENCRYPTION_KEY STRIPE_SECRET_KEY SUPABASE_SERVICE_ROLE_KEY FIRECRAWL_API_KEY
+unset ANTHROPIC_API_KEY NUANCE_API_KEY DATA_ENCRYPTION_KEY STRIPE_SECRET_KEY SUPABASE_SERVICE_ROLE_KEY FIRECRAWL_API_KEY SMTP_PASSWORD
 
 step "Done: https://$WEB_HOST"
 cat <<EOF

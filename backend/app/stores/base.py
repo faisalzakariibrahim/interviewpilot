@@ -35,6 +35,7 @@ class User:
     id: str
     email: Optional[str] = None
     access_token: Optional[str] = None
+    first_name: str = ""
 
 
 @dataclass

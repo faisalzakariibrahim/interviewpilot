@@ -238,3 +238,28 @@ button:disabled {
 .ip-legal li {
   color: var(--ip-text);
 }
+
+.ip-linkbutton {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: #8fb0ff;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.ip-field small {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+.ip-cta {
+  display: inline-block;
+  text-decoration: none;
+  border-radius: 10px;
+  padding: 12px 20px;
+  font-weight: 600;
+}
