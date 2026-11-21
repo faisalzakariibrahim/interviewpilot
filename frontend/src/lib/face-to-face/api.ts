@@ -346,3 +346,38 @@ export function clearInterviews(): Promise<void> {
 export function deleteAllMyData(): Promise<void> {
   return call("/account/data", { method: "DELETE" });
 }
+
+
+// --- owner dashboard -----------------------------------------------------------------
+
+export interface AdminUser {
+  email: string;
+  signed_up: string;
+  last_sign_in: string | null;
+  confirmed: boolean;
+  admin: boolean;
+  free_left: number;
+  plan_status: string | null;
+  subscribed: boolean | null;
+  plan_renews: string | null;
+  plan_cancelling: boolean;
+  interviews: number;
+  last_interview: string | null;
+  resumes: number;
+  scorecards: number;
+}
+
+export interface AdminOverview {
+  generated_at: string;
+  currency: string;
+  totals: Record<string, number>;
+  signups_by_day: { day: string; count: number }[] | null;
+  interviews_by_day: { day: string; count: number }[] | null;
+  users: AdminUser[];
+  recent: { at: string; kind: "signup" | "interview" | "plan"; email: string; detail: string | null }[];
+}
+
+/** Owner only: the backend and the database both refuse anyone else. */
+export function getAdminOverview(): Promise<AdminOverview> {
+  return call("/admin/overview");
+}

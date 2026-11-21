@@ -137,6 +137,8 @@ class Billing:
             raise BillingError("You've used this month's interviews on your plan. They reset when it renews.", 402)
         if "no_credits" in response.text:
             raise BillingError("You've used your free interview. Subscribe to keep practising.", 402)
+        if "not_admin" in response.text:
+            raise BillingError("Only the owner can see this page.", 403)
         if response.status_code in (401, 403):
             raise BillingError("Your session expired. Sign in again.", 401)
         raise BillingError("The account service refused the request ({}).".format(response.status_code), 502)
@@ -170,6 +172,17 @@ class Billing:
                 else "This interview's stronger answers are used up.",
                 402,
             )
+
+    async def admin_overview(self, user: User) -> Dict[str, Any]:
+        """Owner dashboard numbers. The database refuses anyone who isn't in ip_admins."""
+        if not self.enabled:
+            raise BillingError("The admin page needs the cloud version with payments on.", 404)
+        data = await self._user_rpc(user, "ip_admin_overview")
+        monthly = next((p for p in self.packs if p.kind == "monthly"), None)
+        totals = data.setdefault("totals", {})
+        totals["monthly_revenue_cents"] = int(totals.get("subscribers") or 0) * (monthly.price_cents if monthly else 0)
+        data["currency"] = self.currency
+        return data
 
     async def count_job_fetch(self, user: User) -> None:
         if not self.enabled:
@@ -377,6 +390,13 @@ def build_billing_router(billing: Billing, current_user: Callable[..., Any]) -> 
     async def portal(user: User = who) -> Dict[str, str]:
         try:
             return {"url": await billing.portal(user)}
+        except BillingError as error:
+            raise fail(error) from error
+
+    @router.get("/api/admin/overview")
+    async def admin_overview(user: User = who) -> Dict[str, Any]:
+        try:
+            return await billing.admin_overview(user)
         except BillingError as error:
             raise fail(error) from error
 

@@ -97,6 +97,10 @@ class FakeBackend(FakeSupabase):
                 return httpx.Response(200, json=False)
             g[args["kind"]] += 1
             return httpx.Response(200, json=True)
+        if fn == "ip_admin_overview":
+            if not admin:
+                return httpx.Response(400, json={"message": "not_admin", "code": "42501"})
+            return httpx.Response(200, json={"totals": {"users": 3, "subscribers": 2}, "users": [], "recent": []})
         if fn == "ip_count_job_fetch":
             return httpx.Response(200, json=True)
         return httpx.Response(404)
@@ -292,3 +296,12 @@ def test_default_offer_is_the_monthly_plan_only(monkeypatch) -> None:
     from app.billing import load_packs
     monkeypatch.delenv("IP_PACKS", raising=False)
     assert [(p.kind, p.price_cents) for p in load_packs()] == [("monthly", 1000)]
+
+
+def test_admin_overview_is_owner_only(paid) -> None:
+    client, _ = paid
+    refused = client.get("/api/admin/overview", headers=h("tok-other"))
+    assert refused.status_code == 403
+    assert client.get("/api/admin/overview").status_code == 401
+    body = client.get("/api/admin/overview", headers=h("tok-me")).json()
+    assert body["totals"]["monthly_revenue_cents"] == 2000 and body["currency"] == "usd"

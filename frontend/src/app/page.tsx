@@ -302,6 +302,11 @@ export default function Home() {
         {auth.status === "signed-in" ? (
           <span className="ip-row" style={{ gap: 8 }}>
             <span className="ip-tag">{auth.email}</span>
+            {balance?.unlimited && paid && (
+              <a href="/admin" className="ip-ghost" style={{ padding: "8px 12px", borderRadius: 8, textDecoration: "none" }}>
+                Admin
+              </a>
+            )}
             <button type="button" className="ip-ghost" onClick={() => void signOut()}>
               Sign out
             </button>
