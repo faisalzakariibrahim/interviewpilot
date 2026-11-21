@@ -11,13 +11,11 @@ import {
   isPersonaId,
 } from "@/lib/face-to-face/personas";
 
+import { CLOUD, confirmCall, endUserFor, isSameOrigin, refuse } from "@/lib/server/interviewAccess";
+
 export const dynamic = "force-dynamic";
 
 const NUANCE_API = process.env.NUANCE_API_URL ?? "https://api.nuancelabs.ai";
-const BACKEND_URL = (process.env.BACKEND_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
-const CLOUD = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-// Nuance: letters, digits and _ . : - only, up to 128 characters.
-const END_USER_ID = /^[A-Za-z0-9_.:-]{8,128}$/;
 
 interface TokenBody {
   localUserId?: unknown;
@@ -27,26 +25,7 @@ interface TokenBody {
   consent?: unknown;
 }
 
-function refuse(status: number, message: string): Response {
-  return Response.json({ error: message }, { status });
-}
 
-/**
- * Accepts only calls from this app's own pages. Locally there is no sign-in,
- * so without this any website open in the same browser could start
- * conversations on your key. In the cloud a signed-in, allowlisted user is
- * required as well (see whoIsAsking).
- */
-function isSameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  const host = request.headers.get("host");
-  if (!origin || !host) return false;
-  try {
-    return new URL(origin).host === host;
-  } catch {
-    return false;
-  }
-}
 
 /** Whether face-to-face mode is set up. Says nothing about the key itself. */
 export async function GET(): Promise<Response> {
@@ -56,27 +35,6 @@ export async function GET(): Promise<Response> {
   );
 }
 
-/**
- * Cloud: asks the backend who the bearer token belongs to. The backend checks
- * it with Supabase and against the allowlist, and returns an opaque `ref`
- * that is sent to Nuance instead of anything that identifies the person.
- * Local: the page's random id is used.
- */
-/** After Nuance started the session: count the call against the interview's grant. */
-async function confirmCall(request: Request): Promise<void> {
-  const authorization = request.headers.get("authorization");
-  const grant = request.headers.get("x-interview-grant");
-  if (!authorization || !grant) return;
-  try {
-    await fetch(`${BACKEND_URL}/api/billing/authorize-call?confirm=true`, {
-      method: "POST",
-      headers: { Authorization: authorization, "X-Interview-Grant": grant },
-      cache: "no-store",
-    });
-  } catch (error) {
-    console.error("[nuance-token] Couldn't record the call:", error);
-  }
-}
 
 /** "in about 3 hours" until Nuance's daily credits renew. */
 function untilRenewal(renewsAt: unknown): string {
@@ -88,30 +46,6 @@ function untilRenewal(renewsAt: unknown): string {
   return `in about ${hours} hour${hours === 1 ? "" : "s"}`;
 }
 
-async function whoIsAsking(request: Request): Promise<{ ref: string } | Response> {
-  const authorization = request.headers.get("authorization");
-  if (!authorization) return refuse(401, "Sign in first.");
-  try {
-    // The backend checks the sign-in and, in paid mode, that this interview may still start a call.
-    // The call is only counted after Nuance actually starts it (see confirmCall).
-    const grant = request.headers.get("x-interview-grant");
-    const response = await fetch(`${BACKEND_URL}/api/billing/authorize-call`, {
-      method: "POST",
-      headers: { Authorization: authorization, ...(grant ? { "X-Interview-Grant": grant } : {}) },
-      cache: "no-store",
-    });
-    if (response.status === 402) {
-      const detail = ((await response.json().catch(() => ({}))) as { detail?: string }).detail;
-      return refuse(402, detail ?? "Start the interview again.");
-    }
-    if (!response.ok) return refuse(response.status === 403 ? 403 : 401, "Sign in again to start an interview.");
-    const me = (await response.json()) as { ref?: unknown };
-    if (typeof me.ref !== "string" || !END_USER_ID.test(me.ref)) return refuse(502, "Couldn't confirm your sign-in.");
-    return { ref: me.ref };
-  } catch {
-    return refuse(503, "Couldn't confirm your sign-in right now.");
-  }
-}
 
 export async function POST(request: Request): Promise<Response> {
   // A stray space or line break pasted with the key would make Nuance refuse it.
@@ -122,6 +56,7 @@ export async function POST(request: Request): Promise<Response> {
       CLOUD
         ? "Face-to-face mode is not set up on this server yet."
         : "Face-to-face mode is not set up yet: add NUANCE_API_KEY to frontend/.env.local.",
+      { fallback: true },
     );
   }
   if (!isSameOrigin(request)) {
@@ -139,17 +74,9 @@ export async function POST(request: Request): Promise<Response> {
   if (body.consent !== true) {
     return refuse(403, "Face-to-face mode needs the person's consent first.");
   }
-  let endUserId: string;
-  if (CLOUD) {
-    const who = await whoIsAsking(request);
-    if (who instanceof Response) return who;
-    endUserId = who.ref;
-  } else {
-    if (typeof body.localUserId !== "string" || !END_USER_ID.test(body.localUserId)) {
-      return refuse(400, "localUserId is missing or malformed.");
-    }
-    endUserId = body.localUserId;
-  }
+  const endUser = await endUserFor(request, body.localUserId);
+  if (endUser instanceof Response) return endUser;
+  const endUserId = endUser;
   if (!isPersonaId(body.personaId) || !isInterviewStyle(body.style)) {
     return refuse(400, "Unknown persona or interview style.");
   }
@@ -184,7 +111,7 @@ export async function POST(request: Request): Promise<Response> {
     });
   } catch (error) {
     console.error("[nuance-token] Could not reach Nuance:", error);
-    return refuse(502, "Couldn't reach Nuance Labs. Check your internet connection and try again.");
+    return refuse(502, "Couldn't reach the video interviewer service. Try again in a minute.", { fallback: true });
   }
 
   if (!response.ok) {
@@ -202,13 +129,16 @@ export async function POST(request: Request): Promise<Response> {
       return refuse(
         503,
         `The video interviewer has reached its daily limit. It's available again ${untilRenewal(info.renews_at)}.${notCharged}`,
+        { fallback: true },
       );
     }
     if (response.status === 429) {
-      return refuse(503, `The video interviewer is busy right now. Try again in a minute.${notCharged}`);
+      return refuse(503, `The video interviewer is busy right now. Try again in a minute.${notCharged}`, { fallback: true });
     }
     if (response.status >= 500) {
-      return refuse(503, `The video interviewer is having problems right now. Try again in a few minutes.${notCharged}`);
+      return refuse(503, `The video interviewer is having problems right now. Try again in a few minutes.${notCharged}`, {
+        fallback: true,
+      });
     }
     if (response.status === 401) {
       return refuse(

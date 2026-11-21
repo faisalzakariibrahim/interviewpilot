@@ -1,8 +1,8 @@
 "use client";
 
-// Runs one face-to-face mock interview: connects the Nuance conversation,
-// plans the questions on the local backend, and hands the session's events to
-// the InterviewDirector.
+// Runs one mock interview: connects the interviewer (Nuance video, or OpenAI voice-only),
+// plans the questions on the backend, and hands the session's events to the
+// InterviewDirector. If the video interviewer is unavailable, it switches to voice.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -17,7 +17,8 @@ import {
 } from "@nuancelabs/js-sdk";
 import { planInterview, saveInterview, scoreAnswer, startInterview } from "./api";
 import { authHeaders } from "../auth";
-import { InterviewDirector, type DirectorSnapshot } from "./director";
+import { InterviewDirector, type DirectorConversation, type DirectorSnapshot } from "./director";
+import { VoiceConversation, type VoiceChange } from "./voiceConversation";
 import { averageScore, hasConsented, useFaceToFaceStore, type FaceToFaceResult } from "./store";
 
 export type InterviewStatus =
@@ -27,8 +28,14 @@ export type InterviewStatus =
   | "ended"
   | "failed";
 
+export type InterviewMode = "video" | "voice";
+
 export interface UseFaceToFaceInterview {
   status: InterviewStatus;
+  /** The mode the current or last interview runs in (may differ from the choice after a fallback). */
+  activeMode: InterviewMode;
+  /** A short note for the person, e.g. that the interview switched to voice. */
+  notice: string | null;
   /** A message safe to show the person, when status is "failed". */
   failure: string | null;
   snapshot: DirectorSnapshot | null;
@@ -55,6 +62,26 @@ interface Options {
   paid?: boolean;
   /** Called after a credit is spent, so the page can refresh the balance. */
   onCreditSpent?: () => void;
+  /** Video (Nuance avatar) or voice only (OpenAI). Default video. */
+  mode?: InterviewMode;
+}
+
+/** What the hook needs from either interviewer. */
+interface Interviewer extends DirectorConversation {
+  readonly id: string | null;
+  connect(): Promise<void>;
+  disconnect(): Promise<void>;
+  onInterfaceEvent(listener: (event: Record<string, unknown>) => void): () => void;
+}
+
+/** Whether voice mode is set up on the server (asked once per page). */
+let voiceConfigured: Promise<boolean> | null = null;
+export function isVoiceConfigured(): Promise<boolean> {
+  voiceConfigured ??= fetch("/api/voice-session", { cache: "no-store" })
+    .then((response) => (response.ok ? response.json() : { configured: false }))
+    .then((body: { configured?: unknown }) => body.configured === true)
+    .catch(() => false);
+  return voiceConfigured;
 }
 
 /** A grant can be reused for a retry if no answer was scored under it and it is still fresh. */
@@ -97,6 +124,10 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
   const onCreditSpentRef = useRef(options.onCreditSpent);
   onCreditSpentRef.current = options.onCreditSpent;
   const paid = Boolean(options.paid);
+  const chosenMode: InterviewMode = options.mode ?? "video";
+  const [activeMode, setActiveMode] = useState<InterviewMode>(chosenMode);
+  const [notice, setNotice] = useState<string | null>(null);
+  const startRef = useRef<(mode: InterviewMode, why?: string) => Promise<void>>(async () => undefined);
   const lastGrant = useRef<{ id: string; at: number; answered: boolean } | null>(null);
 
   const [status, setStatus] = useState<InterviewStatus>("idle");
@@ -105,6 +136,8 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
   const [result, setResult] = useState<FaceToFaceResult | null>(null);
 
   const conversationRef = useRef<Conversation | null>(null);
+  const voiceRef = useRef<VoiceConversation | null>(null);
+  const interviewerRef = useRef<Interviewer | null>(null);
   const directorRef = useRef<InterviewDirector | null>(null);
   const videoElement = useRef<HTMLVideoElement | null>(null);
   const audioElement = useRef<HTMLAudioElement | null>(null);
@@ -118,6 +151,9 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     if (videoElement.current) conversation.avatar.videoTrack?.attach(videoElement.current);
     if (audioElement.current) conversation.avatar.audioTrack?.attach(audioElement.current);
   }, []);
+  const attachVoice = useCallback(() => {
+    voiceRef.current?.attachAudio(audioElement.current);
+  }, []);
 
   const videoRef = useCallback(
     (element: HTMLVideoElement | null) => {
@@ -130,8 +166,9 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     (element: HTMLAudioElement | null) => {
       audioElement.current = element;
       attachTracks();
+      attachVoice();
     },
-    [attachTracks],
+    [attachTracks, attachVoice],
   );
 
   const release = useCallback(() => {
@@ -139,7 +176,7 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     unsubscribers.current = [];
   }, []);
 
-  const start = useCallback(async () => {
+  const run_ = useCallback(async (mode: InterviewMode, why?: string) => {
     const store = useFaceToFaceStore.getState();
     if (!hasConsented(store)) {
       setFailure("Accept the face-to-face disclosure first.");
@@ -153,6 +190,8 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     setResult(null);
     setSnapshot(null);
     setStatus("starting");
+    setActiveMode(mode);
+    setNotice(why ?? null);
     const startedAt = new Date().toISOString();
     const { localUserId, personaId, style, cameraEnabled } = store;
 
@@ -174,32 +213,68 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     let resolvedGrant: string | null = null;
     granting.then((id) => (resolvedGrant = id)).catch(() => undefined);
 
-    const conversation = createNuanceConversation({
-      token: async () => {
-        const grantId = await granting;
-        const response = await fetch("/api/nuance-token", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(await authHeaders()),
-            ...(grantId ? { "X-Interview-Grant": grantId } : {}),
-          },
-          body: JSON.stringify({
-            localUserId,
-            personaId,
-            style,
-            camera: cameraEnabled,
-            consent: true,
-          }),
-        });
-        const body = (await response.json().catch(() => ({}))) as { token?: string; error?: string };
-        if (!response.ok || !body.token) throw new Error(body.error ?? "Couldn't get a session token.");
-        return body.token;
-      },
-      mediaDevices: { cameraEnabled },
-      maxSessionSeconds,
-    });
-    conversationRef.current = conversation;
+    // Set when the video interviewer can't run right now (out of credits, down, not set up).
+    let videoUnavailable = false;
+    const startHeaders = async (): Promise<Record<string, string>> => {
+      const grantId = await granting;
+      return {
+        "Content-Type": "application/json",
+        ...(await authHeaders()),
+        ...(grantId ? { "X-Interview-Grant": grantId } : {}),
+      };
+    };
+
+    let conversation: Interviewer;
+    let nuance: Conversation | null = null;
+    let voice: VoiceConversation | null = null;
+    if (mode === "voice") {
+      voice = new VoiceConversation({
+        maxSessionSeconds,
+        exchange: async (sdp) => {
+          const response = await fetch("/api/voice-session", {
+            method: "POST",
+            headers: await startHeaders(),
+            body: JSON.stringify({ sdp, localUserId, personaId, style, consent: true }),
+          });
+          const body = (await response.json().catch(() => ({}))) as { sdp?: string; callId?: string | null; error?: string };
+          if (!response.ok || !body.sdp) throw new Error(body.error ?? "Couldn't start the voice interview.");
+          return { sdp: body.sdp, callId: body.callId ?? null };
+        },
+      });
+      conversation = voice;
+    } else {
+      nuance = createNuanceConversation({
+        token: async () => {
+          const response = await fetch("/api/nuance-token", {
+            method: "POST",
+            headers: await startHeaders(),
+            body: JSON.stringify({
+              localUserId,
+              personaId,
+              style,
+              camera: cameraEnabled,
+              consent: true,
+            }),
+          });
+          const body = (await response.json().catch(() => ({}))) as {
+            token?: string;
+            error?: string;
+            fallback?: boolean;
+          };
+          if (!response.ok || !body.token) {
+            if (body.fallback) videoUnavailable = true;
+            throw new Error(body.error ?? "Couldn't get a session token.");
+          }
+          return body.token;
+        },
+        mediaDevices: { cameraEnabled },
+        maxSessionSeconds,
+      });
+      conversation = nuance as unknown as Interviewer;
+    }
+    conversationRef.current = nuance;
+    voiceRef.current = voice;
+    interviewerRef.current = conversation;
 
     // Events can arrive before the plan is ready: hold them, then replay in order.
     let director: InterviewDirector | null = null;
@@ -225,6 +300,7 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
         style,
         personaId,
         endReason,
+        ...(mode === "voice" ? { mode: "voice" as const } : {}),
         turns,
         average: averageScore(turns),
       };
@@ -241,35 +317,39 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
     };
     finalizeRef.current = finalize;
 
+    const onChange = (event: VoiceChange | { type: "tracks-changed" }) => {
+      if (run !== runId.current) return;
+      switch (event.type) {
+        case "tracks-changed":
+          attachTracks();
+          break;
+        case "avatar-presented":
+          attachTracks();
+          attachVoice();
+          route((d) => d.handlePresented());
+          break;
+        case "time-remaining":
+          route((d) => d.handleTimeRemaining(event.secondsRemaining));
+          break;
+        case "session-ended":
+          endReason = event.endReason ?? event.reason;
+          if (event.reason === "policy-violation" || event.reason === "age-check") {
+            setFailure(event.message ?? "The session was ended by a safety check.");
+          }
+          finalize();
+          break;
+        default:
+          break;
+      }
+    };
+
     // Subscribe before connect() so the session's first events aren't missed.
     unsubscribers.current.push(
       conversation.onInterfaceEvent((event) => {
         route((d) => d.handleInterfaceEvent(event));
       }),
-      conversation.onChange((event) => {
-        if (run !== runId.current) return;
-        switch (event.type) {
-          case "tracks-changed":
-            attachTracks();
-            break;
-          case "avatar-presented":
-            attachTracks();
-            route((d) => d.handlePresented());
-            break;
-          case "time-remaining":
-            route((d) => d.handleTimeRemaining(event.secondsRemaining));
-            break;
-          case "session-ended":
-            endReason = event.endReason ?? event.reason;
-            if (event.reason === "policy-violation" || event.reason === "age-check") {
-              setFailure(event.message ?? "The session was ended by a safety check.");
-            }
-            finalize();
-            break;
-          default:
-            break;
-        }
-      }),
+      ...(nuance ? [nuance.onChange((event) => onChange(event as unknown as VoiceChange | { type: "tracks-changed" }))] : []),
+      ...(voice ? [voice.onChange(onChange)] : []),
     );
 
     // Connect right away, inside the click, so the browser allows audio. The
@@ -309,15 +389,26 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
       runId.current += 1;
       release();
       void conversation.disconnect().catch(() => undefined);
+      // The video interviewer can't run right now: carry on in voice, on the same interview.
+      if (mode === "video" && videoUnavailable && (await isVoiceConfigured())) {
+        void startRef.current(
+          "voice",
+          "The video interviewer isn't available right now, so this interview is voice only. It counts as the same interview.",
+        );
+        return;
+      }
       setFailure(describeFailure(error));
       setStatus("failed");
     }
-  }, [attachTracks, maxSessionSeconds, paid, questionCount, release, role, sessionId]);
+  }, [attachTracks, attachVoice, maxSessionSeconds, paid, questionCount, release, role, sessionId]);
+  startRef.current = run_;
+
+  const start = useCallback(() => run_(chosenMode), [run_, chosenMode]);
 
   const end = useCallback(async () => {
     // disconnect() sends session.close and leaves the room. finalize() runs once
     // per session, so calling it here is safe if a session-ended event also comes.
-    await conversationRef.current?.disconnect().catch(() => undefined);
+    await interviewerRef.current?.disconnect().catch(() => undefined);
     finalizeRef.current?.();
   }, []);
 
@@ -327,10 +418,22 @@ export function useFaceToFaceInterview(options: Options): UseFaceToFaceInterview
       runId.current += 1;
       release();
       directorRef.current?.finish();
-      void conversationRef.current?.disconnect().catch(() => undefined);
+      void interviewerRef.current?.disconnect().catch(() => undefined);
     },
     [release],
   );
 
-  return { status, failure, snapshot, result, videoRef, audioRef, start, end, updateResult: setResult };
+  return {
+    status,
+    activeMode,
+    notice,
+    failure,
+    snapshot,
+    result,
+    videoRef,
+    audioRef,
+    start,
+    end,
+    updateResult: setResult,
+  };
 }

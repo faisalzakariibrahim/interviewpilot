@@ -8,7 +8,8 @@ import type { AnswerScore, ModelAnswer, SessionMeta } from "./api";
 import type { InterviewStyle, PersonaId } from "./personas";
 
 /** Bump when the disclosure text changes, so people are asked again. */
-export const DISCLOSURE_VERSION = 1;
+// 2: adds OpenAI for voice-only interviews.
+export const DISCLOSURE_VERSION = 2;
 
 export interface ScoredTurn {
   questionId: string;
@@ -35,6 +36,8 @@ export interface FaceToFaceResult {
   style: InterviewStyle;
   personaId: PersonaId;
   endReason: string;
+  /** "voice" when it ran voice-only; missing means video. */
+  mode?: "voice";
   turns: ScoredTurn[];
   /** Mean of the scored answers, 0 to 10, or null when none were scored. */
   average: number | null;
@@ -46,11 +49,13 @@ interface FaceToFaceState {
    * in on the same browser, everything below is wiped before anything is shown.
    */
   ownerId: string | null;
-  /** A random id for Nuance's per-person policy pauses. Never a name or email. */
+  /** A random per-person id sent to the interviewer providers for abuse checks. Never a name or email. */
   localUserId: string;
   consentVersion: number | null;
   consentAt: string | null;
   cameraEnabled: boolean;
+  /** Video (face-to-face avatar) or voice only. */
+  mode: "video" | "voice";
   style: InterviewStyle;
   personaId: PersonaId;
   /** History from versions before it moved to the backend. Emptied once moved. */
@@ -66,6 +71,7 @@ interface FaceToFaceState {
   acceptDisclosure: () => void;
   withdrawConsent: () => void;
   setCameraEnabled: (on: boolean) => void;
+  setMode: (mode: "video" | "voice") => void;
   setStyle: (style: InterviewStyle) => void;
   setPersonaId: (id: PersonaId) => void;
   clearLegacyResults: () => void;
@@ -87,6 +93,7 @@ function personalDefaults() {
     consentVersion: null,
     consentAt: null,
     cameraEnabled: false,
+    mode: "video" as const,
     style: "neutral" as InterviewStyle,
     personaId: "sam" as PersonaId,
     results: [] as FaceToFaceResult[],
@@ -105,6 +112,7 @@ export const useFaceToFaceStore = create<FaceToFaceState>()(
       consentAt: null,
       // Off by default: the interviewer works without seeing you.
       cameraEnabled: false,
+      mode: "video",
       style: "neutral",
       personaId: "sam",
       results: [],
@@ -118,6 +126,7 @@ export const useFaceToFaceStore = create<FaceToFaceState>()(
         set({ consentVersion: DISCLOSURE_VERSION, consentAt: new Date().toISOString() }),
       withdrawConsent: () => set({ consentVersion: null, consentAt: null, cameraEnabled: false }),
       setCameraEnabled: (cameraEnabled) => set({ cameraEnabled }),
+      setMode: (mode) => set({ mode }),
       setStyle: (style) => set({ style }),
       setPersonaId: (personaId) => set({ personaId }),
       clearLegacyResults: () => set({ results: [] }),

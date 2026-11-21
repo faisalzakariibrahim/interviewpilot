@@ -369,7 +369,7 @@ def build_billing_router(billing: Billing, current_user: Callable[..., Any]) -> 
             "packs": [PackOut(**p.__dict__).model_dump() for p in billing.packs] if billing.enabled else [],
             # Shown on the price card. The cap itself is enforced by the database
             # (ip_private.settings 'monthly_limit'); keep the two equal.
-            "monthly_limit": int(os.getenv("IP_MONTHLY_LIMIT") or 60),
+            "monthly_limit": int(os.getenv("IP_MONTHLY_LIMIT") or 15),
         }
 
     @router.get("/api/billing/status")

@@ -14,7 +14,7 @@ import {
 } from "@/lib/face-to-face/personas";
 import { modelAnswer, saveInterview } from "@/lib/face-to-face/api";
 import { hasConsented, useFaceToFaceStore, type FaceToFaceResult } from "@/lib/face-to-face/store";
-import { useFaceToFaceInterview } from "@/lib/face-to-face/useFaceToFaceInterview";
+import { isVoiceConfigured, useFaceToFaceInterview } from "@/lib/face-to-face/useFaceToFaceInterview";
 
 interface Props {
   /** The InterviewPilot session whose resume is indexed on the backend. */
@@ -74,6 +74,23 @@ const css = {
     padding: "8px 10px",
     fontSize: 15,
   },
+  voice: {
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    padding: "28px 20px",
+    borderRadius: 12,
+    background: "rgba(127,127,127,0.08)",
+    border: "1px solid rgba(127,127,127,0.25)",
+  } as CSSProperties,
+  voiceDot: {
+    width: 14,
+    height: 14,
+    flex: "0 0 auto",
+    borderRadius: "50%",
+    background: "#2f9e6e",
+    boxShadow: "0 0 0 6px rgba(47,158,110,0.18)",
+  } as CSSProperties,
   video: {
     width: "100%",
     aspectRatio: "16 / 9",
@@ -127,6 +144,16 @@ function Disclosure({ onAccept }: { onAccept: () => void }) {
         privacy policy apply to that data, not InterviewPilot&apos;s.
       </p>
 
+      <h3 style={css.h3}>Voice-only mode: what is sent to OpenAI</h3>
+      <ul style={css.list}>
+        <li>
+          If you pick voice only, or the video interviewer is unavailable and the interview switches to
+          voice, OpenAI runs the interviewer instead: it receives your microphone audio for the call and
+          the interview questions. No camera video is used.
+        </li>
+        <li>OpenAI processes this under its API terms and privacy policy, not InterviewPilot&apos;s.</li>
+      </ul>
+
       <h3 style={css.h3}>What goes to Claude (Anthropic), in any mode</h3>
       <ul style={css.list}>
         <li>
@@ -165,7 +192,9 @@ function Disclosure({ onAccept }: { onAccept: () => void }) {
             checked={understood}
             onChange={(e) => setUnderstood(e.target.checked)}
           />
-          <span>I understand my call audio is sent to and recorded by Nuance Labs.</span>
+          <span>
+            I understand my call audio is sent to Nuance Labs (video, recorded) or OpenAI (voice only).
+          </span>
         </label>
       </div>
 
@@ -338,9 +367,19 @@ export function FaceToFaceInterview({
 }: Props) {
   const store = useFaceToFaceStore();
   const consented = hasConsented(store);
-  const interview = useFaceToFaceInterview({ sessionId, role, questionCount, onFinished, paid, onCreditSpent });
+  const [voiceReady, setVoiceReady] = useState(false);
+  useEffect(() => {
+    let live = true;
+    void isVoiceConfigured().then((ok) => live && setVoiceReady(ok));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const mode = voiceReady ? store.mode : "video";
+  const interview = useFaceToFaceInterview({ sessionId, role, questionCount, onFinished, paid, onCreditSpent, mode });
   const { status, snapshot, result, failure } = interview;
   const inCall = status === "starting" || status === "live";
+  const voiceCall = interview.activeMode === "voice";
 
   // Settings come from localStorage: render only in the browser, after it is read.
   const [mounted, setMounted] = useState(false);
@@ -355,6 +394,19 @@ export function FaceToFaceInterview({
 
       {!inCall && (
         <div style={{ ...css.row, marginBottom: 16 }}>
+          {voiceReady && (
+            <label style={css.row}>
+              <span>Mode</span>
+              <select
+                style={css.select}
+                value={mode}
+                onChange={(e) => store.setMode(e.target.value === "voice" ? "voice" : "video")}
+              >
+                <option value="video">Video (face to face)</option>
+                <option value="voice">Voice only</option>
+              </select>
+            </label>
+          )}
           <label style={css.row}>
             <span>Interviewer</span>
             <select
@@ -389,27 +441,51 @@ export function FaceToFaceInterview({
               ))}
             </select>
           </label>
-          <label style={css.row}>
-            <input
-              type="checkbox"
-              checked={store.cameraEnabled}
-              onChange={(e) => store.setCameraEnabled(e.target.checked)}
-            />
-            <span>Let the interviewer see me (sends camera video)</span>
-          </label>
+          {mode === "video" && (
+            <label style={css.row}>
+              <input
+                type="checkbox"
+                checked={store.cameraEnabled}
+                onChange={(e) => store.setCameraEnabled(e.target.checked)}
+              />
+              <span>Let the interviewer see me (sends camera video)</span>
+            </label>
+          )}
         </div>
       )}
       {!inCall && <p style={css.muted}>{STYLE_SPECS[store.style].blurb}</p>}
 
       {/* Kept mounted so the persona's tracks have somewhere to attach. */}
       <div style={{ display: inCall ? "block" : "none" }}>
-        <video ref={interview.videoRef} style={css.video} autoPlay playsInline />
+        <video
+          ref={interview.videoRef}
+          style={{ ...css.video, display: voiceCall ? "none" : "block" }}
+          autoPlay
+          playsInline
+        />
         <audio ref={interview.audioRef} autoPlay />
+        {voiceCall && (
+          <div style={css.voice} aria-label="Voice-only interview">
+            <span style={css.voiceDot} aria-hidden />
+            <span>
+              Voice interview with {store.personaId.charAt(0).toUpperCase() + store.personaId.slice(1)}. Speak
+              naturally; pause when you&apos;re done.
+            </span>
+          </div>
+        )}
       </div>
+
+      {interview.notice && (
+        <p style={{ ...css.muted, marginTop: 8 }} role="status">
+          {interview.notice}
+        </p>
+      )}
 
       {status === "starting" && (
         <p style={css.muted} role="status">
-          Getting your interviewer ready. This can take up to half a minute.
+          {voiceCall
+            ? "Connecting your interviewer. Allow the microphone if your browser asks."
+            : "Getting your interviewer ready. This can take up to half a minute."}
         </p>
       )}
 

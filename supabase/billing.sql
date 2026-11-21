@@ -108,7 +108,7 @@ grant execute on function ip_private.is_admin() to authenticated;
 -- Every new sign-up gets an account row with the free interviews configured (default 3).
 create table if not exists ip_private.settings (key text primary key, value text not null);
 insert into ip_private.settings values ('free_credits', '3') on conflict do nothing;
-insert into ip_private.settings values ('monthly_limit', '60') on conflict do nothing;
+insert into ip_private.settings values ('monthly_limit', '15') on conflict do nothing;
 revoke all on ip_private.settings from public, anon, authenticated;
 
 create or replace function ip_private.on_new_user()

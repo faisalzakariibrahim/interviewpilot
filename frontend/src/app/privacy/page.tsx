@@ -33,6 +33,11 @@ export default function Privacy() {
           your camera video only if you turn the camera on, the questions and a short contact-free summary of your
           experience. Nuance records calls and runs safety checks on them under its own terms.
         </li>
+        <li>
+          <strong>OpenAI</strong> runs the voice-only interviewer, when you choose it or when the video interviewer is
+          unavailable. During such a call it receives your microphone audio and the interview questions, under its
+          own API terms. No camera video is used.
+        </li>
         <li><strong>Supabase</strong> hosts the encrypted database and sends sign-in emails.</li>
         <li><strong>Vercel</strong> hosts the app.</li>
         <li><strong>Stripe</strong> processes payments.</li>
