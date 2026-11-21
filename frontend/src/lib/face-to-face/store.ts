@@ -41,6 +41,11 @@ export interface FaceToFaceResult {
 }
 
 interface FaceToFaceState {
+  /**
+   * Cloud mode: the signed-in account this browser data belongs to. When another account signs
+   * in on the same browser, everything below is wiped before anything is shown.
+   */
+  ownerId: string | null;
   /** A random id for Nuance's per-person policy pauses. Never a name or email. */
   localUserId: string;
   consentVersion: number | null;
@@ -61,6 +66,8 @@ interface FaceToFaceState {
   setStyle: (style: InterviewStyle) => void;
   setPersonaId: (id: PersonaId) => void;
   clearLegacyResults: () => void;
+  /** Wipes everything belonging to the previous person and marks the data as this account's. */
+  resetFor: (ownerId: string | null) => void;
 }
 
 function newLocalUserId(): string {
@@ -71,9 +78,24 @@ function newLocalUserId(): string {
   return `ip_${random}`;
 }
 
+function personalDefaults() {
+  return {
+    localUserId: newLocalUserId(),
+    consentVersion: null,
+    consentAt: null,
+    cameraEnabled: false,
+    style: "neutral" as InterviewStyle,
+    personaId: "sam" as PersonaId,
+    results: [] as FaceToFaceResult[],
+    session: null,
+    questionCount: 5,
+  };
+}
+
 export const useFaceToFaceStore = create<FaceToFaceState>()(
   persist(
     (set) => ({
+      ownerId: null,
       localUserId: newLocalUserId(),
       consentVersion: null,
       consentAt: null,
@@ -93,8 +115,14 @@ export const useFaceToFaceStore = create<FaceToFaceState>()(
       setStyle: (style) => set({ style }),
       setPersonaId: (personaId) => set({ personaId }),
       clearLegacyResults: () => set({ results: [] }),
+      resetFor: (ownerId) => set({ ...personalDefaults(), ownerId }),
     }),
-    { name: "interviewpilot-face-to-face", version: 1 },
+    {
+      name: "interviewpilot-face-to-face",
+      // v2 adds ownerId. Older saved data has no owner, so the first cloud sign-in wipes it.
+      version: 2,
+      migrate: (persisted) => ({ ...(persisted as object), ownerId: null }) as FaceToFaceState,
+    },
   ),
 );
 

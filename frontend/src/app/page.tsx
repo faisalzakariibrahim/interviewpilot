@@ -179,19 +179,35 @@ export default function Home() {
     }
   }
 
-  // The backend may have lost the remembered session: check it still exists there.
+  // Browser data belongs to one account. If a different account is signed in on this
+  // browser, wipe the previous person's setup before anything of theirs can be shown.
+  const currentUserId = auth.status === "signed-in" ? auth.userId : null;
+  const storeOwner = store.ownerId;
+  const resetStoreFor = store.resetFor;
+  const storeIsMine = auth.status === "local" || (currentUserId !== null && storeOwner === currentUserId);
+  useEffect(() => {
+    if (mounted && currentUserId && storeOwner !== currentUserId) resetStoreFor(currentUserId);
+  }, [mounted, currentUserId, storeOwner, resetStoreFor]);
+
+  // A remembered resume is shown only after the backend confirms it belongs to this account.
   const sessionId = store.session?.id ?? null;
   const setSession = store.setSession;
+  const [confirmedSessionId, setConfirmedSessionId] = useState<string | null>(null);
   useEffect(() => {
-    if (!mounted || !signedIn || !sessionId || !backendUp) return;
+    if (!mounted || !signedIn || !storeIsMine || !sessionId || !backendUp) return;
+    if (confirmedSessionId === sessionId) return;
     let cancelled = false;
     void getSession(sessionId).then((found) => {
-      if (!cancelled && found === null) setSession(null);
+      if (cancelled) return;
+      if (found === null) setSession(null);
+      else if (found) setConfirmedSessionId(found.id);
     });
     return () => {
       cancelled = true;
     };
-  }, [mounted, signedIn, sessionId, backendUp, setSession]);
+  }, [mounted, signedIn, storeIsMine, sessionId, backendUp, setSession, confirmedSessionId]);
+  const activeSession = storeIsMine && store.session && confirmedSessionId === store.session.id ? store.session : null;
+  const checkingSession = Boolean(storeIsMine && store.session && !activeSession);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -203,7 +219,9 @@ export default function Home() {
     setBusy(true);
     setFormError(null);
     try {
-      store.setSession(await createSession({ role: role.trim(), jobDescription, resume }));
+      const created = await createSession({ role: role.trim(), jobDescription, resume });
+      setConfirmedSessionId(created.id);
+      store.setSession(created);
       setJobDescription("");
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Couldn't set up the session.");
@@ -411,17 +429,19 @@ export default function Home() {
         </section>
       )}
 
-      {store.session ? (
+      {checkingSession ? (
+        <section className="ip-card"><p className="ip-muted" style={{ margin: 0 }}>Loading your practice setup…</p></section>
+      ) : activeSession ? (
         <>
           <section className="ip-card">
             <div className="ip-row" style={{ justifyContent: "space-between" }}>
               <div>
-                <h2>{store.session.role}</h2>
+                <h2>{activeSession.role}</h2>
                 <p className="ip-muted" style={{ margin: 0 }}>
-                  {store.session.filename} · {store.session.passage_count} passage
-                  {store.session.passage_count === 1 ? "" : "s"} indexed
+                  {activeSession.filename} · {activeSession.passage_count} passage
+                  {activeSession.passage_count === 1 ? "" : "s"} indexed
                   {CLOUD ? ", encrypted" : " on this computer"}
-                  {store.session.has_job_description ? " · job description added" : ""}
+                  {activeSession.has_job_description ? " · job description added" : ""}
                 </p>
               </div>
               <div className="ip-row">
@@ -447,9 +467,9 @@ export default function Home() {
           </section>
 
           <FaceToFaceInterview
-            key={store.session.id}
-            sessionId={store.session.id}
-            role={store.session.role}
+            key={activeSession.id}
+            sessionId={activeSession.id}
+            role={activeSession.role}
             questionCount={store.questionCount}
             blockedReason={blockedReason}
             onFinished={(result, saved) => (saved ? history.upsert(result) : undefined)}

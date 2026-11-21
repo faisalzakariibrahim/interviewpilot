@@ -46,7 +46,11 @@ export async function authHeaders(): Promise<Record<string, string>> {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
-export type AuthState = { status: "local" } | { status: "loading" } | { status: "signed-out" } | { status: "signed-in"; email: string };
+export type AuthState =
+  | { status: "local" }
+  | { status: "loading" }
+  | { status: "signed-out" }
+  | { status: "signed-in"; email: string; userId: string };
 
 export function useAuth(): AuthState {
   const [state, setState] = useState<AuthState>(CLOUD ? { status: "loading" } : { status: "local" });
@@ -54,7 +58,11 @@ export function useAuth(): AuthState {
     const sb = supabase();
     if (!sb) return;
     const apply = (session: Session | null) =>
-      setState(session ? { status: "signed-in", email: session.user.email ?? "" } : { status: "signed-out" });
+      setState(
+        session
+          ? { status: "signed-in", email: session.user.email ?? "", userId: session.user.id }
+          : { status: "signed-out" },
+      );
     void sb.auth.getSession().then(({ data }) => apply(data.session));
     const { data } = sb.auth.onAuthStateChange((_event, session) => apply(session));
     return () => data.subscription.unsubscribe();
@@ -77,10 +85,15 @@ export async function signOut(): Promise<void> {
   const sb = supabase();
   if (!sb) return;
   await sb.auth.signOut();
-  // Leave nothing of the previous person's in this browser.
+  // Leave nothing of the previous person's in this browser: storage, and the page's memory
+  // (a fresh load), so the next person to sign in here starts clean.
   try {
-    localStorage.removeItem("interviewpilot-face-to-face");
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("interviewpilot")) localStorage.removeItem(key);
+    }
+    sessionStorage.clear();
   } catch {
     /* storage unavailable */
   }
+  window.location.replace("/");
 }
