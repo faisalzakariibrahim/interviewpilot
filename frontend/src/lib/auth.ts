@@ -148,8 +148,8 @@ export async function setNewPassword(password: string): Promise<void> {
   if (error) throw new Error(friendly(error.message));
 }
 
-/** Shown only when Google sign-in is switched on for this deployment. */
-export const GOOGLE_ENABLED = process.env.NEXT_PUBLIC_GOOGLE_SIGNIN === "on";
+/** Google sign-in is on unless this deployment sets NEXT_PUBLIC_GOOGLE_SIGNIN=off. */
+export const GOOGLE_ENABLED = CLOUD && process.env.NEXT_PUBLIC_GOOGLE_SIGNIN !== "off";
 
 export async function signOut(): Promise<void> {
   const sb = supabase();
