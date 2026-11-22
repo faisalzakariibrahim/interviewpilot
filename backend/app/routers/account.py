@@ -1,5 +1,7 @@
 """Your notes, your interview history, and deleting everything."""
 
+import json
+import re
 from typing import Any, Callable, Dict, List
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Response
@@ -7,6 +9,9 @@ from pydantic import BaseModel, Field
 
 from ..auth import user_ref
 from ..stores.base import MAX_NOTES, Store, StoreError, User
+
+# A 5-question interview with feedback and stronger answers is well under this.
+MAX_INTERVIEW_BYTES = 200_000
 from .face_to_face import scrub_contact_details
 from .sessions import store_errors
 
@@ -52,6 +57,10 @@ def build_account_router(store: Store, current_user: Callable[..., Any], mode: s
     async def save_interview(interview_id: str, payload: Dict[str, Any] = Body(...), user: User = who) -> Dict[str, Any]:
         if payload.get("id") != interview_id:
             raise HTTPException(status_code=422, detail="The id in the path and the body differ.")
+        if not re.fullmatch(r"[A-Za-z0-9_.:-]{1,128}", interview_id):
+            raise HTTPException(status_code=422, detail="That interview id isn't valid.")
+        if len(json.dumps(payload, default=str)) > MAX_INTERVIEW_BYTES:
+            raise HTTPException(status_code=413, detail="That scorecard is too large to save.")
         try:
             await store.save_interview(user, payload)
         except StoreError as error:

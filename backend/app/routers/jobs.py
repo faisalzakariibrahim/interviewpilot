@@ -88,8 +88,11 @@ def _is_public_host(host: str) -> bool:
         return False
     for info in infos:
         address = ipaddress.ip_address(info[4][0].split("%")[0])
+        if getattr(address, "ipv4_mapped", None):
+            address = address.ipv4_mapped
         if (
-            address.is_private
+            not address.is_global
+            or address.is_private
             or address.is_loopback
             or address.is_link_local
             or address.is_multicast
@@ -147,21 +150,32 @@ async def fetch_direct(url: str, transport: Optional[httpx.AsyncBaseTransport] =
             if urlsplit(current).scheme not in ("http", "https") or not is_public(host):
                 raise FetchError("That address isn't a public web page.")
             try:
-                response = await client.get(
+                async with client.stream(
+                    "GET",
                     current,
                     headers={"User-Agent": "Mozilla/5.0 (InterviewPilot job reader)", "Accept": "text/html,text/plain"},
-                )
+                ) as response:
+                    location = response.headers.get("location")
+                    status = response.status_code
+                    kind = response.headers.get("content-type", "")
+                    encoding = response.encoding or "utf-8"
+                    raw = bytearray()
+                    if status == 200 and ("html" in kind or "text" in kind):
+                        # Read at most MAX_DOWNLOAD_BYTES, however large the page claims to be.
+                        async for chunk in response.aiter_bytes():
+                            raw.extend(chunk)
+                            if len(raw) >= MAX_DOWNLOAD_BYTES:
+                                break
             except httpx.HTTPError as error:
                 raise FetchError("The page couldn't be reached.") from error
-            if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
-                current = urljoin(current, response.headers["location"])
+            if status in (301, 302, 303, 307, 308) and location:
+                current = urljoin(current, location)
                 continue
-            if response.status_code != 200:
-                raise FetchError("The site answered {}.".format(response.status_code))
-            kind = response.headers.get("content-type", "")
+            if status != 200:
+                raise FetchError("The site answered {}.".format(status))
             if "html" not in kind and "text" not in kind:
                 raise FetchError("That link isn't a web page.")
-            body = response.content[:MAX_DOWNLOAD_BYTES].decode(response.encoding or "utf-8", errors="replace")
+            body = bytes(raw[:MAX_DOWNLOAD_BYTES]).decode(encoding, errors="replace")
             text = _html_to_text(body) if "html" in kind else body
             if len(text) < 200:
                 raise FetchError("The page has almost no text (it may need a browser to load).")
