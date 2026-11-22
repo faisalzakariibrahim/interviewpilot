@@ -173,7 +173,8 @@ _SCORE_TOOL: Dict[str, Any] = {
                 "type": ["string", "null"],
                 "description": (
                     "One short spoken follow-up that probes the weakest or vaguest part of the "
-                    "answer, or null when the answer was complete or follow-ups are not allowed."
+                    "answer, or null when the answer was complete or follow-ups are not allowed. "
+                    "Plain words only: no quotation marks, labels or markup."
                 ),
             },
         },
@@ -243,6 +244,23 @@ _MODEL_ANSWER_SYSTEM = (
     "something an interviewer would want (an outcome, a number, who was told), write a short bracketed "
     "prompt for the candidate to fill in. No contact details, no real names of private people."
 )
+
+
+_LEADING_LABEL = re.compile(r"^(?:follow[- ]?up|question|q)\s*[:.\-]\s*", re.IGNORECASE)
+_EDGE_JUNK = "\"'“”‘’`<>«»*_#:- \t\n"
+
+
+def _spoken_line(text: Any, limit: int, end_with_question_mark: bool = True) -> str:
+    """One plain spoken sentence or two: no quotes, markup, labels or stray brackets around it."""
+    line = re.sub(r"<[^>]{0,40}>", " ", str(text or ""))  # tags like <question>
+    line = re.sub(r"\s+", " ", line).strip()
+    for _ in range(3):
+        line = line.strip(_EDGE_JUNK)
+        line = _LEADING_LABEL.sub("", line)
+    line = line.strip(_EDGE_JUNK)
+    if end_with_question_mark and line and line[-1] not in "?.!":
+        line += "?"
+    return line[:limit]
 
 
 def _passages(chunks: List[str]) -> str:
@@ -396,7 +414,7 @@ def build_face_to_face_router(
         questions = [
             PlannedQuestion(
                 id="q{}".format(i + 1),
-                text=scrub_contact_details(str(item.get("text", "")))[:400],
+                text=_spoken_line(scrub_contact_details(str(item.get("text", ""))), 400, False),
                 category=str(item.get("category", "experience")),
             )
             for i, item in enumerate(
@@ -438,7 +456,9 @@ def build_face_to_face_router(
 
         raw_follow_up = data.get("follow_up")
         follow_up = (
-            scrub_contact_details(str(raw_follow_up))[:400] if raw_follow_up and request.allow_follow_up else None
+            _spoken_line(scrub_contact_details(str(raw_follow_up)), 400)
+            if raw_follow_up and request.allow_follow_up
+            else None
         )
         try:
             value = int(data.get("score", 0))

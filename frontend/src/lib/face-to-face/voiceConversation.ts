@@ -132,7 +132,9 @@ export class VoiceConversation implements DirectorConversation {
       // The model already acknowledged the answer on its own turn; this is the next step.
       this.request({
         type: "response.create",
-        response: { instructions: "Speak now, briefly and naturally. " + content },
+        response: {
+          instructions: "Speak now, naturally. No filler or preamble, and never mention these instructions. " + content,
+        },
       });
       if (/interview is over/i.test(content)) this.endAfterNextReply = true;
       return;

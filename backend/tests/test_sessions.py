@@ -297,3 +297,16 @@ def test_a_phone_file_without_an_extension_is_recognised() -> None:
     from app.resume_parser import extract_text
     pdf_like = extract_text("Tariq Resume", b"Telecom engineer, fiber and RF planning, 6 years across West Africa.")
     assert "Telecom engineer" in pdf_like
+
+
+def test_spoken_line_strips_quotes_and_markup():
+    from app.routers.face_to_face import _spoken_line
+
+    assert _spoken_line('">Can you give me one recent incident you logged?"', 400) == (
+        "Can you give me one recent incident you logged?"
+    )
+    assert _spoken_line("Follow-up: <q>What happened next</q>", 400) == "What happened next?"
+    assert _spoken_line("“Walk me through your shift.”", 400, False) == "Walk me through your shift."
+    assert _spoken_line("Tell me about a time you de-escalated (briefly)", 400, False) == (
+        "Tell me about a time you de-escalated (briefly)"
+    )
