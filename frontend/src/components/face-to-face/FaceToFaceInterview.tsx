@@ -125,8 +125,12 @@ function Disclosure({ onAccept }: { onAccept: () => void }) {
   return (
     <section style={css.panel} aria-labelledby="f2f-disclosure-title">
       <h2 id="f2f-disclosure-title" style={css.h2}>
-        Face-to-face practice is optional, and it is not local
+        Practice interviews: video or voice only
       </h2>
+      <p style={css.card}>
+        <strong>Two ways to practise.</strong> After you accept below, pick <strong>Video (face to face)</strong> or{" "}
+        <strong>Voice only</strong> next to the Start button. Both use the same questions and scorecard.
+      </p>
       <p>
         InterviewPilot keeps your resume, its search index and your sessions on this computer.
         Face-to-face mode is the one exception: the video interviewer is run by Nuance Labs on
@@ -390,23 +394,23 @@ export function FaceToFaceInterview({
 
   return (
     <section style={css.panel} aria-label="Face-to-face mock interview">
-      <h2 style={css.h2}>Face-to-face practice: {role}</h2>
+      <h2 style={css.h2}>Mock interview: {role}</h2>
 
       {!inCall && (
         <div style={{ ...css.row, marginBottom: 16 }}>
-          {voiceReady && (
-            <label style={css.row}>
-              <span>Mode</span>
-              <select
-                style={css.select}
-                value={mode}
-                onChange={(e) => store.setMode(e.target.value === "voice" ? "voice" : "video")}
-              >
-                <option value="video">Video (face to face)</option>
-                <option value="voice">Voice only</option>
-              </select>
-            </label>
-          )}
+          <label style={css.row}>
+            <span>Mode</span>
+            <select
+              style={css.select}
+              value={mode}
+              onChange={(e) => store.setMode(e.target.value === "voice" ? "voice" : "video")}
+            >
+              <option value="video">Video (face to face)</option>
+              <option value="voice" disabled={!voiceReady}>
+                {voiceReady ? "Voice only" : "Voice only (not available yet)"}
+              </option>
+            </select>
+          </label>
           <label style={css.row}>
             <span>Interviewer</span>
             <select
@@ -537,7 +541,7 @@ export function FaceToFaceInterview({
         )}
         {!inCall && (
           <button type="button" style={css.ghost} onClick={store.withdrawConsent}>
-            Turn off face-to-face mode
+            Turn off practice interviews
           </button>
         )}
       </div>
