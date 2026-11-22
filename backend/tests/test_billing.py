@@ -34,6 +34,7 @@ class FakeBackend(FakeSupabase):
         self.stripe_calls: List[Dict[str, Any]] = []
         self.plans: Dict[str, Dict[str, Any]] = {}
         self.monthly_limit = 60
+        self.daily_limit = 1000
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         if request.url.host == "api.stripe.com":
@@ -79,6 +80,8 @@ class FakeBackend(FakeSupabase):
                        "used": plan["used"], "limit": self.monthly_limit, "customer_id": plan["customer"]}
             return httpx.Response(200, json={"credits": self.credits[user["id"]], "unlimited": admin, "plan": out})
         if fn == "ip_start_interview":
+            if not admin and len([g for g in self.grants.values() if g["user"] == user["id"]]) >= self.daily_limit:
+                return httpx.Response(400, json={"message": "daily_limit", "code": "P0429"})
             if not admin and active and plan["used"] < self.monthly_limit:
                 plan["used"] += 1
             elif not admin:
@@ -320,3 +323,10 @@ def test_a_call_counts_only_when_confirmed(paid) -> None:
         assert client.post("/api/billing/authorize-call?confirm=true", headers=h("tok-other", grant)).status_code == 200
     assert fake.grants[grant]["call"] == 3
     assert client.post("/api/billing/authorize-call", headers=h("tok-other", grant)).status_code == 402
+
+
+def test_daily_limit_has_a_clear_message(paid) -> None:
+    client, fake = paid
+    fake.daily_limit = 0
+    response = client.post("/api/billing/start", headers=h("tok-other"))
+    assert response.status_code == 429 and "today's limit" in response.json()["detail"]

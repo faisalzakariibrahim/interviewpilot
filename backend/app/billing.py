@@ -12,11 +12,13 @@ Card details never reach this server: Stripe Checkout collects them.
 """
 
 from datetime import datetime, timezone
+import asyncio
 import hashlib
 import hmac
 import json
 import os
 import time
+from email.message import EmailMessage
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlsplit
@@ -133,6 +135,13 @@ class Billing:
         response = await self._rpc(function, args or {}, user.access_token or "", self.anon_key)
         if response.status_code == 200:
             return response.json()
+        if "daily_limit" in response.text:
+            raise BillingError(
+                "You've reached today's limit of {} practice interviews. You can start another within 24 hours.".format(
+                    os.getenv("IP_DAILY_LIMIT") or 3
+                ),
+                429,
+            )
         if "plan_limit" in response.text:
             raise BillingError("You've used this month's interviews on your plan. They reset when it renews.", 402)
         if "no_credits" in response.text:
@@ -158,7 +167,44 @@ class Billing:
     async def start(self, user: User) -> str:
         if not self.enabled:
             return "local"
-        return str(await self._user_rpc(user, "ip_start_interview"))
+        grant = str(await self._user_rpc(user, "ip_start_interview"))
+        await self._usage_alert()
+        return grant
+
+    async def _usage_alert(self) -> None:
+        """Emails the admins once a day when interviews started in 24 hours reach the alert level."""
+        if not self.service_key:
+            return
+        try:
+            response = await self._rpc("ip_claim_usage_alert", {}, self.service_key, self.service_key)
+            alert = response.json() if response.status_code == 200 else None
+        except Exception:  # an alert must never block an interview
+            return
+        if not isinstance(alert, dict) or not alert.get("to"):
+            return
+        from .welcome import send, smtp_settings  # local import: avoids a cycle
+
+        settings = smtp_settings()
+        if not settings:
+            print("[usage-alert] {} interviews in 24 hours (alert level {}); SMTP isn't set, so no email.".format(
+                alert.get("started_24h"), alert.get("level")))
+            return
+        message = EmailMessage()
+        message["Subject"] = "InterviewPilot: {} interviews in the last 24 hours".format(alert.get("started_24h"))
+        message["From"] = settings["from"]
+        message["To"] = ", ".join(str(email) for email in alert["to"][:5])
+        message.set_content(
+            "Interviews started in the last 24 hours: {}.\nThis is at or above your alert level of {}.\n\n"
+            "Check who is using it at {}/admin and your OpenAI and Nuance usage pages.\n"
+            "You get this at most once a day.".format(
+                alert.get("started_24h"), alert.get("level"),
+                (os.getenv("APP_URL") or "https://interviewpilot-eight.vercel.app").rstrip("/"),
+            )
+        )
+        try:
+            await asyncio.to_thread(send, message, settings)
+        except Exception as error:
+            print("[usage-alert] Couldn't send the alert email:", type(error).__name__)
 
     async def use(self, user: User, grant_id: Optional[str], kind: str) -> None:
         if not self.enabled:

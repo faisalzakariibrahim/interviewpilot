@@ -35,6 +35,10 @@ export default function Terms() {
           month (fair use); unused ones don&apos;t carry over. Cancel any time from &quot;Manage plan&quot;: the plan stays
           active until the end of the month you paid for, and there are no refunds for part of a month.
         </li>
+        <li>
+          Fair use: every account can start up to 3 interviews in any 24 hours, and each interview lasts up to 20
+          minutes. Interviews that never connect are given back automatically.
+        </li>
         <li>Prices are shown before you pay, and payment is processed by Stripe.</li>
         <li>An interview is used when it starts. If it fails to start, retrying within 35 minutes doesn&apos;t use another one.</li>
         <li>The interviewer service is in preview and can be unavailable or end a call early. If that costs you an interview, contact us and we will restore the credit.</li>

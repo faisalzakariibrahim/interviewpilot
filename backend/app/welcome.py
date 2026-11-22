@@ -42,13 +42,13 @@ def build_message(to: str, first_name: str, app_url: str, sender: str) -> EmailM
     url = app_url or "https://interviewpilot-eight.vercel.app"
     text = (
         f"Hi {name},\n\n"
-        "Welcome to InterviewPilot! Your first 3 face-to-face mock interviews are free.\n\n"
+        "Welcome to InterviewPilot! Your first 3 mock interviews are free.\n\n"
         "How it works:\n"
         "1. Upload your resume and the job you want (a job link works too).\n"
         "2. A video AI interviewer asks questions built from your experience and follows up like a real hiring manager.\n"
         "3. Get a scorecard for every answer, with a stronger version built only from your own experience.\n\n"
         f"Start your free interviews: {url}\n\n"
-        "After that, the monthly plan is $10 a month for up to 60 interviews, and you can cancel any time.\n\n"
+        "After that, the monthly plan is $10 a month for up to 15 interviews (video or voice only), and you can cancel any time.\n\n"
         "Good luck with your next interview!\n"
         "The InterviewPilot team\n\n"
         "You're getting this one-time email because you just created an InterviewPilot account."
@@ -68,7 +68,7 @@ def build_message(to: str, first_name: str, app_url: str, sender: str) -> EmailM
 <li>Get a scorecard for every answer, with a stronger version built only from your own experience.</li>
 </ol>
 <p style="margin:0 0 22px"><a href="{link}" style="display:inline-block;background:#3d6bff;color:#ffffff;text-decoration:none;font-weight:600;padding:12px 20px;border-radius:10px">Start your free interviews</a></p>
-<p style="margin:0 0 16px;line-height:1.55;color:#4a5568">After that, the monthly plan is $10 a month for up to 60 interviews. Cancel any time.</p>
+<p style="margin:0 0 16px;line-height:1.55;color:#4a5568">After that, the monthly plan is $10 a month for up to 15 interviews (video or voice only). Cancel any time.</p>
 <p style="margin:0;line-height:1.55">Good luck with your next interview!<br>The InterviewPilot team</p>
 </td></tr></table>
 <p style="font-size:12px;color:#8a94a6;max-width:520px;margin:14px auto 0">You're getting this one-time email because you just created an InterviewPilot account.</p>

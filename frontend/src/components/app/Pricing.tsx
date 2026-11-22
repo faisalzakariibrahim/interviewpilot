@@ -39,7 +39,7 @@ export function Pricing({
   function describe(pack: Pack) {
     const price = formatPrice(pack.price_cents, packs!.currency);
     return pack.kind === "monthly"
-      ? { title: pack.label || "Monthly", price, unit: "per month", note: `Up to ${packs!.monthly_limit ?? 60} interviews a month. Cancel any time.`, action: "Subscribe for " + price + "/month" }
+      ? { title: pack.label || "Monthly", price, unit: "per month", note: `Up to ${packs!.monthly_limit ?? 15} interviews a month (up to 3 a day). Cancel any time.`, action: "Subscribe for " + price + "/month" }
       : {
           title: pack.label || "Pay as you go",
           price,

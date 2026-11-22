@@ -159,7 +159,19 @@ export default function AdminPage() {
             user and aren&apos;t shown here.
           </p>
 
+          {(t.interviews_24h ?? 0) >= (t.alert_24h ?? 40) && (
+            <p className="ip-banner is-alert" role="alert">
+              High usage: {t.interviews_24h} interviews started in the last 24 hours (your alert level is {t.alert_24h ?? 40}).
+              Check the users below and your OpenAI and Nuance usage pages.
+            </p>
+          )}
+
           <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
+            <Tile
+              label="Last 24 hours"
+              value={String(t.interviews_24h ?? 0)}
+              note={`interviews · alert at ${t.alert_24h ?? 40} · ${t.daily_limit ?? 3} per person a day`}
+            />
             <Tile label="Users" value={String(t.users ?? 0)} note={`${t.signups_7d ?? 0} new this week`} />
             <Tile label="Active this week" value={String(t.active_7d ?? 0)} note="started an interview" />
             <Tile
