@@ -11,8 +11,8 @@ const STEPS = [
     body: "Upload your resume and paste a job link. Questions are built from what you've actually done and what the role asks for.",
   },
   {
-    title: "Interview face to face",
-    body: "A video AI interviewer asks the questions, listens, and follows up when an answer is thin, like a real hiring manager.",
+    title: "Interview by video or voice",
+    body: "An AI interviewer asks the questions face to face or voice only, listens, and follows up when an answer is thin, like a real hiring manager.",
   },
   {
     title: "Get a scorecard",
@@ -25,10 +25,10 @@ export function Landing() {
     <>
       <section style={{ padding: "24px 0 8px" }}>
         <h2 style={{ fontSize: 34, lineHeight: 1.15, margin: "0 0 12px", letterSpacing: "-0.02em" }}>
-          Practise your next job interview face to face.
+          Practise your next job interview out loud.
         </h2>
         <p style={{ fontSize: 18, color: "var(--ip-muted)", margin: 0, maxWidth: 640 }}>
-          A video AI interviewer asks questions built from your resume and the job you want, then scores every
+          An AI interviewer, on video or voice only, asks questions built from your resume and the job you want, then scores every
           answer and shows you how to say it better.
         </p>
         <div className="ip-row" style={{ gap: 12, marginTop: 20, flexWrap: "wrap" }}>
@@ -71,7 +71,7 @@ export function Landing() {
           <li>Your resume, notes and scorecards are encrypted and visible only to your account.</li>
           <li>Email addresses, phone numbers and links are removed from your resume before it&apos;s stored.</li>
           <li>The resume file itself isn&apos;t kept. You can delete everything at any time.</li>
-          <li>During a call, your audio (and camera, only if you turn it on) goes to our video-interviewer provider.</li>
+          <li>During a call, your audio (and camera, only if you turn it on in video mode) goes to the interviewer provider: Nuance Labs for video, OpenAI for voice only.</li>
         </ul>
       </section>
 

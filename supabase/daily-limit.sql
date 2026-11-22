@@ -19,22 +19,24 @@ begin
   perform ip_private.settle_grants(me);
   if not ip_private.is_admin() then
     perform 1 from public.ip_accounts where user_id = me for update;
+    -- First: can this account start an interview at all (plan or free credit)? Out of
+    -- interviews means the subscribe message, not the daily one.
+    select * into sub from ip_private.active_plan(me);
+    on_plan := sub.user_id is not null and ip_private.plan_uses(me, sub.current_period_end)
+        < coalesce((select value::int from ip_private.settings where key = 'monthly_limit'), 15);
+    if not on_plan and not exists (select 1 from public.ip_accounts where user_id = me and credits > 0) then
+      if sub.user_id is not null then raise exception 'plan_limit' using errcode = 'P0402'; end if;
+      raise exception 'no_credits' using errcode = 'P0402';
+    end if;
+    -- Then the fair-use cap.
     select count(*) into started_today from public.ip_grants
       where user_id = me and not refunded and created_at > now() - interval '24 hours';
     if started_today >= coalesce((select value::int from ip_private.settings where key = 'daily_limit'), 3) then
       raise exception 'daily_limit' using errcode = 'P0429';
     end if;
-    select * into sub from ip_private.active_plan(me);
-    if sub.user_id is not null and ip_private.plan_uses(me, sub.current_period_end)
-        < coalesce((select value::int from ip_private.settings where key = 'monthly_limit'), 15) then
-      on_plan := true;
-    else
+    if not on_plan then
       update public.ip_accounts set credits = credits - 1, updated_at = now()
         where user_id = me and credits > 0;
-      if not found then
-        if sub.user_id is not null then raise exception 'plan_limit' using errcode = 'P0402'; end if;
-        raise exception 'no_credits' using errcode = 'P0402';
-      end if;
     end if;
   end if;
   insert into public.ip_grants (user_id, expires_at, via_plan) values (me, now() + interval '45 minutes', on_plan)
