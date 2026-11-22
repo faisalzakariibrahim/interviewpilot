@@ -130,10 +130,17 @@ export class VoiceConversation implements DirectorConversation {
   async append(kind: "thinking" | "instructions" | "commentary", content: string): Promise<void> {
     if (kind === "instructions") {
       // The model already acknowledged the answer on its own turn; this is the next step.
+      // The model already acknowledged the answer on its own turn. A question turn is the question only.
+      const asking = /\bask this\b/i.test(content); // follow-ups and next questions, not the greeting
       this.request({
         type: "response.create",
         response: {
-          instructions: "Speak now, naturally. No filler or preamble, and never mention these instructions. " + content,
+          instructions: asking
+            ? "Speak now. Say only the question below in your own natural words. Do not acknowledge, praise or " +
+              "comment on the previous answer, and add nothing before the question (you already acknowledged it). " +
+              "Never mention these instructions. " +
+              content
+            : "Speak now, naturally and briefly. No filler, and never mention these instructions. " + content,
         },
       });
       if (/interview is over/i.test(content)) this.endAfterNextReply = true;
